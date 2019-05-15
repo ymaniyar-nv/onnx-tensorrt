@@ -49,12 +49,12 @@ bool is_transpose_required(nvinfer1::Dims const& shape,
     int src_i = perm.order[dst_i];
     if( shape.d[src_i] != 1 ) {
       if( src_i < prev_significant_dim ) {
-        return false;
+        return true;
       }
       prev_significant_dim = src_i;
     }
   }
-  return true;
+  return false;
 }
 
 // Note: perm should not include the batch dim
@@ -68,17 +68,20 @@ transpose_tensor(IImporterContext* ctx,
     return nullptr;
   }
   nvinfer1::Dims shape = tensor.getDimensions();
-  nvinfer1::Dims new_shape;
-  new_shape.nbDims = shape.nbDims;
-  for( int i=0; i<new_shape.nbDims; ++i ) {
-    new_shape.d[i] = 0; // 0 => copy from source
-    new_shape.type[i] = shape.type[permute_dim_types ? perm.order[i] : i];
-  }
-  // TODO: Why do we get incorrect results when this condition is removed?
-  if( !is_transpose_required(shape, perm) ) {
+  // If a transpose is required, add transpose property to the shuffle layer.
+  if( is_transpose_required(shape, perm) ) {
     layer->setFirstTranspose(perm);
   }
-  layer->setReshapeDimensions(new_shape);
+  // Else, the transpose can be simplified to a reshape.
+  else
+  {
+    nvinfer1::Dims new_shape;
+    new_shape.nbDims = shape.nbDims;
+    for( int i=0; i<new_shape.nbDims; ++i ) {
+      new_shape.d[i] = shape.d[perm.order[i]];
+    }
+    layer->setReshapeDimensions(new_shape);
+  }
   return layer->getOutput(0);
 }
 
