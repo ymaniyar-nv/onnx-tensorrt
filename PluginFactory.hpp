@@ -53,7 +53,7 @@ public:
   // This is used by TRT during engine deserialization
   virtual nvinfer1::IPlugin* createPlugin(const char* layerName,
                                           const void* serialData,
-                                          size_t serialLength) override;
+                                          size_t serialLength) TRTNOEXCEPT override;
   virtual void destroy() override { delete this; }
 };
 

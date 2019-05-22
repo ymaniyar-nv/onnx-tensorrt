@@ -32,26 +32,35 @@ using std::endl;
 
 namespace onnx2trt {
 
-nvinfer1::IPlugin*
-PluginFactory::createPlugin(const char* layerName,
-                            const void* serialData,
-                            size_t serialLength) {
-  const char* magic_string;
-  deserialize_value(&serialData, &serialLength, &magic_string);
-  if( magic_string != std::string(REGISTERABLE_PLUGIN_MAGIC_STRING) ) {
-    std::cerr << "ERROR: Not a valid serialized plugin" << std::endl;
+nvinfer1::IPlugin* PluginFactory::createPlugin(const char* layerName, const void* serialData, size_t serialLength)
+{
+    try
+    {
+        const char* magic_string;
+        deserialize_value(&serialData, &serialLength, &magic_string);
+        if (magic_string != std::string(REGISTERABLE_PLUGIN_MAGIC_STRING))
+        {
+            std::cerr << "ERROR: Not a valid serialized plugin" << std::endl;
+            return nullptr;
+        }
+        const char* plugin_type;
+        deserialize_value(&serialData, &serialLength, &plugin_type);
+        if (!_plugin_registry.count(plugin_type))
+        {
+            std::cerr << "ERROR: No plugin registered for op: " << plugin_type << std::endl;
+            return nullptr;
+        }
+        auto create_plugin_func = _plugin_registry.at(plugin_type);
+        Plugin* plugin = create_plugin_func(serialData, serialLength);
+        _owned_plugin_instances.emplace_back(plugin);
+        return plugin;
+    }
+    catch (std::exception& e)
+    {
+        std::cerr << e.what() << std::endl;
+    }
+
     return nullptr;
-  }
-  const char* plugin_type;
-  deserialize_value(&serialData, &serialLength, &plugin_type);
-  if( !_plugin_registry.count(plugin_type) ) {
-    std::cerr << "ERROR: No plugin registered for op: " << plugin_type << std::endl;
-    return nullptr;
-  }
-  auto create_plugin_func = _plugin_registry.at(plugin_type);
-  Plugin* plugin = create_plugin_func(serialData, serialLength);
-  _owned_plugin_instances.emplace_back(plugin);
-  return plugin;
 }
 
 } // namespace onnx2trt
