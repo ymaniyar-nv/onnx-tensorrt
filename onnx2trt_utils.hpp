@@ -288,14 +288,12 @@ inline int get_conv_output_size(int input_size, int filter_size,
 }
 
 void get_kernel_params(::ONNX_NAMESPACE::NodeProto const& onnx_node,
-                       nvinfer1::DimsHW const& input_shape,
-                       nvinfer1::DimsHW* kernel_size,
-                       nvinfer1::DimsHW* strides,
-                       nvinfer1::DimsHW* beg_padding,
-                       nvinfer1::DimsHW* end_padding,
+                       nvinfer1::Dims* kernel_size,
+                       nvinfer1::Dims* strides,
+                       nvinfer1::Dims* beg_padding,
+                       nvinfer1::Dims* end_padding,
                        nvinfer1::PaddingMode& paddingMode,
-                       nvinfer1::DimsHW* dilations=nullptr,
-                       nvinfer1::DimsHW const* output_shape=nullptr);
+                       nvinfer1::Dims* dilations=nullptr);
 
 inline nvinfer1::ScaleMode get_scale_mode(nvinfer1::Dims const& weights_shape) {
   if( weights_shape.nbDims == 1 ) {
