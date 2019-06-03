@@ -529,19 +529,8 @@ DEFINE_BUILTIN_OP_IMPORTER(Abs) {
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Add) {
-  if( inputs.at(0).is_tensor() && inputs.at(1).is_tensor() ) {
-    // TODO: Check "broadcast" and "axis" attributes
-    return combineTensorsElementwise(
-        ctx, node, inputs, nvinfer1::ElementWiseOperation::kSUM);
-  } else if( inputs.at(0).is_weights() && inputs.at(1).is_weights() ) {
-    // TODO: Add weights together (i.e., constant fold)
-    return MAKE_ERROR("Both inputs are weights",
-                      ErrorCode::kUNSUPPORTED_NODE);
-  } else {
-    // One input is a tensor, the other is weights
-    return importScaleOp(
-        ctx, node, inputs.at(0), inputs.at(1), ScaleOp::kSHIFT);
-  }
+  return combineTensorsElementwise(
+      ctx, node, inputs, nvinfer1::ElementWiseOperation::kSUM, true);
 }
 
 // float* is the poor man's std::optional<float>
@@ -631,6 +620,22 @@ DEFINE_BUILTIN_OP_IMPORTER(AveragePool) {
     dims = tensor_ptr->getDimensions();
   }
 #endif // NV_TENSORRT_MAJOR >= 4
+
+  // Support for opset10 ceil_mode
+  CeilingPoolDim ceilingPool;
+  // Ceiling and dialations added in opset 10
+  if (ctx->getOpsetVersion() >= 10)
+  {
+    OnnxAttrs attrs(node);
+    const auto ceil_mode = attrs.get<int>("ceil_mode", 0);
+    const auto dilations = attrs.get<std::vector<int>>("dilations", std::vector<int> (2, 1));
+    for(size_t i = 0; i < dilations.size(); i++) ASSERT(dilations[i] == 1, ErrorCode::kUNSUPPORTED_NODE); // Do not support pooling dilations currently
+    if (ceil_mode != 0) // Need to set pooling formula to use ceiling instead of floor
+    {
+      ctx->network()->setPoolingOutputDimensionsFormula(&ceilingPool);
+    }
+  }
+
   ASSERT(dims.nbDims == 3, ErrorCode::kUNSUPPORTED_NODE);
   nvinfer1::DimsHW kernel_size(1, 1), strides(1, 1), beg_padding(0, 0), end_padding(0, 0);
   nvinfer1::PaddingMode paddingMode;
@@ -1016,6 +1021,8 @@ DEFINE_BUILTIN_OP_IMPORTER(Dropout) {
   }
   else
   {
+    // Error if opset version >= 10 as boolean not supported right now
+    ASSERT(ctx->getOpsetVersion() < 10, ErrorCode::kUNSUPPORTED_NODE);
     // Add identity layer twice for both Dropout outputs: (output + mask)
     std::vector<TensorOrWeights> outputs;
     outputs.push_back(identity(ctx,inputs.at(0)));
@@ -1327,6 +1334,7 @@ DEFINE_BUILTIN_OP_IMPORTER(MaxPool) {
   nvinfer1::ITensor* tensor_ptr = &inputs.at(0).tensor();
   nvinfer1::Dims dims = tensor_ptr->getDimensions();
   ASSERT(dims.nbDims >= 2, ErrorCode::kINVALID_NODE);
+
 #if NV_TENSORRT_MAJOR >= 4
   bool need_to_expand_dims = (dims.nbDims == 2);
   if( need_to_expand_dims ) {
@@ -1337,6 +1345,22 @@ DEFINE_BUILTIN_OP_IMPORTER(MaxPool) {
     dims = tensor_ptr->getDimensions();
   }
 #endif // NV_TENSORRT_MAJOR >= 4
+
+  // Support for opset10 ceil_mode
+  CeilingPoolDim ceilingPool;
+  // Ceiling and dialations added in opset 10
+  if (ctx->getOpsetVersion() >= 10)
+  {
+    OnnxAttrs attrs(node);
+    const auto ceil_mode = attrs.get<int>("ceil_mode", 0);
+    const auto dilations = attrs.get<std::vector<int>>("dilations", std::vector<int> (2, 1));
+    for(size_t i = 0; i < dilations.size(); i++) ASSERT(dilations[i] == 1, ErrorCode::kUNSUPPORTED_NODE); // Do not support pooling dilations currently
+    if (ceil_mode != 0) // Need to set pooling formula to use ceiling instead of floor
+    {
+      ctx->network()->setPoolingOutputDimensionsFormula(&ceilingPool);
+    }
+  }
+
   int nbSpatialDims = dims.nbDims - 1;
   ASSERT(nbSpatialDims == 2 || nbSpatialDims == 3, ErrorCode::kUNSUPPORTED_NODE);
   nvinfer1::Dims kernel_size = makeDims(nbSpatialDims, 1);
@@ -1355,6 +1379,7 @@ DEFINE_BUILTIN_OP_IMPORTER(MaxPool) {
   layer->setPostPadding(end_padding);
   tensor_ptr = layer->getOutput(0);
   dims = tensor_ptr->getDimensions();
+
 #if NV_TENSORRT_MAJOR >= 4
   if( need_to_expand_dims ) {
     // Un-expand spatial dims back to 1D
@@ -1399,19 +1424,8 @@ DEFINE_BUILTIN_OP_IMPORTER(Min) {
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Mul) {
-  if( inputs.at(0).is_tensor() && inputs.at(1).is_tensor() ) {
-    // TODO: Check "broadcast" and "axis" attributes
-    return combineTensorsElementwise(
-        ctx, node, inputs, nvinfer1::ElementWiseOperation::kPROD);
-  } else if( inputs.at(0).is_weights() && inputs.at(1).is_weights() ) {
-    // TODO: Add weights together (i.e., constant fold)
-    return MAKE_ERROR("Both inputs are weights",
-                      ErrorCode::kUNSUPPORTED_NODE);
-  } else {
-    // One input is a tensor, the other is weights
-    return importScaleOp(
-        ctx, node, inputs.at(0), inputs.at(1), ScaleOp::kSCALE);
-  }
+  return combineTensorsElementwise(
+      ctx, node, inputs, nvinfer1::ElementWiseOperation::kPROD, true);
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Neg) {
@@ -1956,6 +1970,8 @@ DEFINE_BUILTIN_OP_IMPORTER(ThresholdedRelu) {
 DEFINE_BUILTIN_OP_IMPORTER(TopK)
 {
     ASSERT(inputs.at(0).is_tensor(), ErrorCode::kUNSUPPORTED_NODE);
+    // Error if opset version >= 10 as we don't support TopK with k as an input
+    ASSERT(ctx->getOpsetVersion() < 10, ErrorCode::kUNSUPPORTED_NODE);
     nvinfer1::ITensor& tensor = inputs.at(0).tensor();
     ASSERT(tensor.getType() != nvinfer1::DataType::kINT32, ErrorCode::kUNSUPPORTED_NODE);
     OnnxAttrs attrs(node);
@@ -2171,6 +2187,8 @@ DEFINE_BUILTIN_OP_IMPORTER(Upsample) {
 // TRT-7031: add tests
 DEFINE_BUILTIN_OP_IMPORTER(Slice) {
   ASSERT(inputs.at(0).is_tensor(), ErrorCode::kUNSUPPORTED_NODE);
+  // Error if opset version >= 10 as we don't support slicing with inputs
+  ASSERT(ctx->getOpsetVersion() < 10, ErrorCode::kUNSUPPORTED_NODE);
   nvinfer1::ITensor& tensor = inputs.at(0).tensor();;
   OnnxAttrs attrs(node);
   const auto starts = attrs.get<std::vector<int64_t>>("starts");
@@ -2187,14 +2205,16 @@ DEFINE_BUILTIN_OP_IMPORTER(Slice) {
   };
   nvinfer1::Dims sliceStart = makeDims(0);
   nvinfer1::Dims sliceSize = dims;
-  const nvinfer1::Dims sliceStride = makeDims(1); // ONNX has no support for strides in Slice
+  nvinfer1::Dims sliceStride = makeDims(1); // ONNX has support for strides before opset 10
   for (size_t i = 0; i < axes.size(); i++){
+
     int axis = axes[i];
     // Special pass through for no-ops (slice across the whole dimension, [:])
     if (starts[i] == 0 && ends[i] >= dims.d[i])
     {
       continue;
     }
+
     // Convert the axis if it passes the no-op check, we catch actual slices across batch dimension here
     TRT_CHECK(convert_axis(axis, nbDims));
 

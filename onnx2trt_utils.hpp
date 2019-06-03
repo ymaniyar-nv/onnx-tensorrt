@@ -34,6 +34,20 @@
 using std::cerr;
 using std::endl;
 
+class CeilingPoolDim:public nvinfer1::IOutputDimensionsFormula{
+public:
+  nvinfer1::DimsHW compute(nvinfer1::DimsHW inputDims, nvinfer1::DimsHW kernelSize,
+    nvinfer1::DimsHW stride, nvinfer1::DimsHW padding, nvinfer1::DimsHW dilation, const char* layerName) const
+  {
+    nvinfer1::DimsHW outputDims;
+    for(size_t dimension = 0; dimension < inputDims.nbDims; dimension++)
+    {
+      outputDims.d[dimension] = static_cast<int>(ceil((inputDims.d[dimension] + padding.d[dimension] * 2.0 - kernelSize.d[dimension]) / stride.d[dimension] + 1.0));
+    }
+    return outputDims;
+  }
+};
+
 inline std::ostream& operator<<(std::ostream& stream, nvinfer1::Dims const& shape) {
   if( shape.nbDims == 0 ) {
     return stream;
