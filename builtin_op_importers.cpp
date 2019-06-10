@@ -1970,14 +1970,23 @@ DEFINE_BUILTIN_OP_IMPORTER(ThresholdedRelu) {
 DEFINE_BUILTIN_OP_IMPORTER(TopK)
 {
     ASSERT(inputs.at(0).is_tensor(), ErrorCode::kUNSUPPORTED_NODE);
-    // Error if opset version >= 10 as we don't support TopK with k as an input
-    ASSERT(ctx->getOpsetVersion() < 10, ErrorCode::kUNSUPPORTED_NODE);
     nvinfer1::ITensor& tensor = inputs.at(0).tensor();
     ASSERT(tensor.getType() != nvinfer1::DataType::kINT32, ErrorCode::kUNSUPPORTED_NODE);
     OnnxAttrs attrs(node);
-    ASSERT(attrs.count("k"), ErrorCode::kINVALID_NODE);
-    int k = attrs.get<int>("k");
     int axis = attrs.get("axis", -1);
+    int k;
+    // Don't support TopK with k as a tensor
+    if(ctx->getOpsetVersion() >= 10)
+    {
+      ASSERT(inputs.at(1).is_weights(), ErrorCode::kUNSUPPORTED_NODE);
+      ASSERT(inputs.at(1).weights().count() == 1, ErrorCode::kUNSUPPORTED_NODE);
+      k = *static_cast<int*>(inputs.at(1).weights().values);
+    }
+    else
+    {
+      ASSERT(attrs.count("k"), ErrorCode::kINVALID_NODE);
+      k = attrs.get<int>("k");
+    }
 
     int nbDims = tensor.getDimensions().nbDims;
     TRT_CHECK(convert_axis(axis, nbDims));
@@ -2187,14 +2196,36 @@ DEFINE_BUILTIN_OP_IMPORTER(Upsample) {
 // TRT-7031: add tests
 DEFINE_BUILTIN_OP_IMPORTER(Slice) {
   ASSERT(inputs.at(0).is_tensor(), ErrorCode::kUNSUPPORTED_NODE);
-  // Error if opset version >= 10 as we don't support slicing with inputs
-  ASSERT(ctx->getOpsetVersion() < 10, ErrorCode::kUNSUPPORTED_NODE);
-  nvinfer1::ITensor& tensor = inputs.at(0).tensor();;
-  OnnxAttrs attrs(node);
-  const auto starts = attrs.get<std::vector<int64_t>>("starts");
-  const auto ends = attrs.get<std::vector<int64_t>>("ends");
-  const auto axes = attrs.get<std::vector<int64_t>>("axes");
-  ASSERT(axes.size() == starts.size() && axes.size() == ends.size(), ErrorCode::kINVALID_VALUE);
+  // If opset version >= 10 slice paramerters are weights instead of attributes
+  nvinfer1::ITensor& tensor = inputs.at(0).tensor();
+  std::vector<int64_t> starts;
+  std::vector<int64_t> ends;
+  std::vector<int64_t> axes;
+  std::vector<int64_t> steps;
+  if(ctx->getOpsetVersion() >= 10)
+  {
+    ASSERT(inputs.at(1).is_weights(), ErrorCode::kUNSUPPORTED_NODE);
+    int64_t * array_start = static_cast<int64_t *>(inputs.at(1).weights().values);
+    starts = std::vector<int64_t> (array_start, array_start + inputs.at(1).weights().count());
+    ASSERT(inputs.at(2).is_weights(), ErrorCode::kUNSUPPORTED_NODE);
+    array_start = static_cast<int64_t *>(inputs.at(2).weights().values);
+    ends = std::vector<int64_t> (array_start, array_start + inputs.at(2).weights().count());
+    ASSERT(inputs.at(3).is_weights(), ErrorCode::kUNSUPPORTED_NODE);
+    array_start = static_cast<int64_t *>(inputs.at(3).weights().values);
+    axes = std::vector<int64_t> (array_start, array_start + inputs.at(3).weights().count());
+    ASSERT(inputs.at(4).is_weights(), ErrorCode::kUNSUPPORTED_NODE);
+    array_start = static_cast<int64_t *>(inputs.at(4).weights().values);
+    steps = std::vector<int64_t> (array_start, array_start + inputs.at(4).weights().count());
+  }
+  else
+  {
+    OnnxAttrs attrs(node);
+    starts = attrs.get<std::vector<int64_t>>("starts");
+    ends = attrs.get<std::vector<int64_t>>("ends");
+    axes = attrs.get<std::vector<int64_t>>("axes");
+    steps = std::vector<int64_t>(starts.size(), 1);
+  }
+  ASSERT(axes.size() == starts.size() && axes.size() == ends.size() && axes.size() == steps.size(), ErrorCode::kINVALID_VALUE);
 
   const nvinfer1::Dims dims = tensor.getDimensions();
   const int nbDims = dims.nbDims;
@@ -2204,13 +2235,14 @@ DEFINE_BUILTIN_OP_IMPORTER(Slice) {
     return result;
   };
   nvinfer1::Dims sliceStart = makeDims(0);
+  nvinfer1::Dims sliceEnd = dims;
   nvinfer1::Dims sliceSize = dims;
   nvinfer1::Dims sliceStride = makeDims(1); // ONNX has support for strides before opset 10
   for (size_t i = 0; i < axes.size(); i++){
 
     int axis = axes[i];
     // Special pass through for no-ops (slice across the whole dimension, [:])
-    if (starts[i] == 0 && ends[i] >= dims.d[i])
+    if (starts[i] == 0 && ends[i] >= dims.d[i] && steps[i] == 1)
     {
       continue;
     }
@@ -2218,22 +2250,37 @@ DEFINE_BUILTIN_OP_IMPORTER(Slice) {
     // Convert the axis if it passes the no-op check, we catch actual slices across batch dimension here
     TRT_CHECK(convert_axis(axis, nbDims));
 
-    sliceStart.d[axis] = starts[i];
+    // Check if slice is valid
+    ASSERT(steps[i] != 0, ErrorCode::kINVALID_VALUE);
+    sliceStride.d[axis] = steps[i];
 
-    // If ends[i] is within dims.d[axis], this is a "normal" slice, set the size to ends[i] - starts[i]
-    if (ends[i] <= dims.d[axis] && ends[i] > 0)
+    // Calculate start index
+    // Support for negative indexing
+    if(starts[i] < 0)
     {
-      sliceSize.d[axis] = ends[i] - starts[i];
+      sliceStart.d[axis] = std::max(dims.d[i] + static_cast<int>(starts[i]), 0);
     }
-    // Else, ends[i] is some very high number, set the slice size to the difference between the
-    // actual dimension size and the start index.
     else
     {
-      sliceSize.d[axis] = dims.d[axis] - starts[i];
+      sliceStart.d[axis] = std::min(static_cast<int>(starts[i]), dims.d[i] - 1);
     }
+
+    // Calculate end index
+    // Support for negative indexing
+    if(ends[i] < 0)
+    {
+      // Differs from start because starts is inclusive and ends is exclusive
+      sliceEnd.d[axis] = std::max(dims.d[i] + static_cast<int>(ends[i]), -1);
+    }
+    else
+    {
+      sliceEnd.d[axis] = std::min(static_cast<int>(ends[i]), dims.d[i]);
+    }
+
+    sliceSize.d[axis] = std::max(static_cast<int>(std::ceil(static_cast<float>(sliceEnd.d[axis] - sliceStart.d[axis]) / steps[i])), 0);
   }
   // If entire slice op was a no-op, simply return the input tensor
-  if (sliceStart == makeDims(0) && sliceSize == dims)
+  if (sliceStart == makeDims(0) && sliceSize == dims && sliceStride == makeDims(1))
   {
     return {{&tensor}};
   }
