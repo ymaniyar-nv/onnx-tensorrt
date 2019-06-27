@@ -149,9 +149,11 @@ addScale(IImporterContext*   ctx,
          nvinfer1::Weights   power) {
   nvinfer1::ITensor* tensor_ptr = &tensor_;
   nvinfer1::Dims dims = tensor_ptr->getDimensions();
+
 #if NV_TENSORRT_MAJOR >= 4
-  bool need_to_expand_dims = (dims.nbDims != 3);
-  nvinfer1::Dims orig_shape = dims;
+  // TRT supports 2D or 3D scale, others need expand dims and add shuffle layers.
+  const bool need_to_expand_dims = (dims.nbDims != 3 && dims.nbDims != 4);
+  const nvinfer1::Dims orig_shape = dims;
   if( need_to_expand_dims ) {
     // Expand or squash dims to 3D
     nvinfer1::Dims new_shape = dims;
@@ -167,7 +169,8 @@ addScale(IImporterContext*   ctx,
   }
 #endif // NV_TENSORRT_MAJOR >= 4
 
-  ASSERT(dims.nbDims == 3, ErrorCode::kUNSUPPORTED_NODE);
+  const int nbSpatialDims = dims.nbDims - 1;
+  ASSERT((nbSpatialDims == 2 || nbSpatialDims == 3), ErrorCode::kUNSUPPORTED_NODE);
   // Fill in dtype for any unused (dummy) weights
   nvinfer1::DataType* dtype_ptr = nullptr;
   if( shift.count ) {
@@ -187,8 +190,8 @@ addScale(IImporterContext*   ctx,
   shift.type = *dtype_ptr;
   scale.type = *dtype_ptr;
   power.type = *dtype_ptr;
-  auto* layer = ctx->network()->addScale(
-      *tensor_ptr, mode, shift, scale, power);
+  auto* layer = ctx->network()->addScaleNd(
+      *tensor_ptr, mode, shift, scale, power, tensor_ptr->getDimensions().nbDims - nbSpatialDims - 1);
   ASSERT(layer, ErrorCode::kUNSUPPORTED_NODE);
   tensor_ptr = layer->getOutput(0);
 
@@ -813,7 +816,7 @@ DEFINE_BUILTIN_OP_IMPORTER(Conv) {
     }
     #endif // NV_TENSORRT_MAJOR >= 4
     const int nbSpatialDims = dims.nbDims - 1;
-    ASSERT((nbSpatialDims == 2 && kernel_weights.shape.nbDims == 4) || 
+    ASSERT((nbSpatialDims == 2 && kernel_weights.shape.nbDims == 4) ||
       (nbSpatialDims == 3 && kernel_weights.shape.nbDims == 5), ErrorCode::kUNSUPPORTED_NODE); //NOW only support 2D/3D
 
     nvinfer1::Weights bias_weights;
@@ -837,7 +840,7 @@ DEFINE_BUILTIN_OP_IMPORTER(Conv) {
     nvinfer1::Dims dilations = makeDims(nbSpatialDims, 1);
 	  nvinfer1::PaddingMode paddingMode;
     get_kernel_params(node, &kernel_size, &strides, &beg_padding, &end_padding, paddingMode, &dilations);
-    
+
     for(int i = 1; i <= nbSpatialDims; ++i){
       ASSERT(kernel_size.d[nbSpatialDims - i] == kernel_weights.shape.d[kernel_weights.shape.nbDims - i], ErrorCode::kUNSUPPORTED_NODE);
     }
@@ -894,7 +897,7 @@ DEFINE_BUILTIN_OP_IMPORTER(ConvTranspose) {
   }
 #endif // NV_TENSORRT_MAJOR >= 4
   const int nbSpatialDims = dims.nbDims - 1;
-  ASSERT((nbSpatialDims == 2 && kernel_weights.shape.nbDims == 4) || 
+  ASSERT((nbSpatialDims == 2 && kernel_weights.shape.nbDims == 4) ||
     (nbSpatialDims == 3 && kernel_weights.shape.nbDims == 5), ErrorCode::kUNSUPPORTED_NODE); //NOW only support 2D/3D
   nvinfer1::Weights bias_weights;
   if( inputs.size() == 3 ) {
@@ -2141,7 +2144,7 @@ DEFINE_BUILTIN_OP_IMPORTER(Upsample) {
   ASSERT(inputs.at(0).is_tensor(), ErrorCode::kUNSUPPORTED_NODE);
   nvinfer1::ITensor &tensor = inputs.at(0).tensor();
   const int nbDims = tensor.getDimensions().nbDims;
-  // Input tensor has no batch dimension. 
+  // Input tensor has no batch dimension.
   const int nbSpatialDims = nbDims - 1;
   ASSERT(nbSpatialDims == 2 || nbSpatialDims == 3, ErrorCode::kUNSUPPORTED_NODE);
   OnnxAttrs attrs(node);
