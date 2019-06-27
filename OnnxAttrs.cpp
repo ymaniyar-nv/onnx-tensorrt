@@ -99,3 +99,20 @@ template<> nvinfer1::DataType OnnxAttrs::get<nvinfer1::DataType>(std::string key
     }
     return dtype;
 }
+
+template <>
+std::vector<nvinfer1::DataType> OnnxAttrs::get<std::vector<nvinfer1::DataType>>(std::string key) const {
+    auto attr = this->at(key)->ints();
+    auto onnx_dtypes = std::vector<int64_t>(attr.begin(), attr.end());
+    std::vector<nvinfer1::DataType> dtypes{};
+    for (auto onnx_dtype : onnx_dtypes)
+    {
+        nvinfer1::DataType dtype{};
+        if (!onnx2trt::convert_dtype(static_cast<int32_t>(onnx_dtype), &dtype))
+        {
+            dtype = static_cast<nvinfer1::DataType>(-1);
+        }
+        dtypes.push_back(dtype);
+    }
+    return dtypes;
+}
