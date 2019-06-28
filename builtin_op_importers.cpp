@@ -1499,6 +1499,10 @@ DEFINE_BUILTIN_OP_IMPORTER(PRelu) {
         {
             weights.shape = expand_dims(weights.shape, shape1.nbDims);
         }
+        else if (inputs.at(1).shape().nbDims > shape1.nbDims)
+        {
+            weights.shape = remove_dim(weights.shape, BATCH_DIM);
+        }
         auto constantLayer = ctx->network()->addConstant(weights.shape, weights);
         ASSERT(constantLayer, ErrorCode::kUNSUPPORTED_NODE);
         slopes = constantLayer->getOutput(0);
@@ -1629,39 +1633,43 @@ DEFINE_BUILTIN_OP_IMPORTER(Reshape) {
     OnnxAttrs attrs(node);
     new_shape = attrs.get<nvinfer1::Dims>("shape");
   }
+  int infer_dim = -1;
   if( input.is_weights() ) {
     auto weights = input.weights();
+    TRT_CHECK(get_infer_dim(infer_dim,new_shape));
+    if (infer_dim >= 0)
+    {
+      // Update the dim to the correct value
+      int new_dim = get_shape_size(weights.shape) / (-1 * get_shape_size(new_shape));
+      new_shape.d[infer_dim] = new_dim;
+    }
     ASSERT(get_shape_size(new_shape) == get_shape_size(weights.shape),
            ErrorCode::kUNSUPPORTED_NODE);
     weights.shape = new_shape;
     return {{weights}};
-  } else {
-    nvinfer1::ITensor& tensor = input.tensor();
+  } 
+  else {
     new_shape = set_dims_CHW(remove_dim(new_shape, BATCH_DIM));
-    int infer_dim = -1;
-    for (int i = 0; i < new_shape.nbDims; ++i) {
-      if (new_shape.d[i] < 0) {
-        // -1 bears special meaning, which means the current dimension can
-        // be inferred while keepin the total number of elements the same.
-        // https://github.com/onnx/onnx/blob/9b9f595107e3fc0295d50f6294d43879df17552f/onnx/defs/tensor/defs.cc#L73-L75
-        ASSERT(new_shape.d[i] == -1, ErrorCode::kUNSUPPORTED_NODE);
-        // We can only one dimension that has -1
-        ASSERT(infer_dim == -1, ErrorCode::kUNSUPPORTED_NODE);
-        infer_dim = i;
-      }
+    nvinfer1::ITensor& tensor = input.tensor();
+    TRT_CHECK(get_infer_dim(infer_dim,new_shape));
+    if (infer_dim >= 0) 
+    {
+      // Update the dim to the correct value
+      int new_dim = get_shape_size(tensor.getDimensions()) / (-1 * get_shape_size(new_shape));
+      new_shape.d[infer_dim] = new_dim;
     }
-    if (infer_dim < 0) {
-      ASSERT(get_shape_size(new_shape) ==
-                 get_shape_size(tensor.getDimensions()),
+
+    ASSERT(get_shape_size(new_shape) == get_shape_size(tensor.getDimensions()),
              ErrorCode::kUNSUPPORTED_NODE);
-    }
 #if NV_TENSORRT_MAJOR < 4
-    if( new_shape.nbDims == 1 ) {
+    if( new_shape.nbDims == 1 )
+    {
       // Note: TRT implicitly flattens the input to FC layers, and in fact
       //       requires that it still has 4D shape, so in this case we
       //       simply ignore the reshape.
       RETURN_IDENTITY(inputs.at(0));
-    } else {
+    } 
+    else {
       ASSERT(new_shape.nbDims == 3, ErrorCode::kUNSUPPORTED_NODE);
       nvinfer1::IShuffleLayer* layer = ctx->network()->addShuffle(tensor);
       ASSERT(layer, ErrorCode::kUNSUPPORTED_NODE);
