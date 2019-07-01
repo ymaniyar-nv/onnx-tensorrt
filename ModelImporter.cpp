@@ -158,7 +158,11 @@ NodeImportResult ModelImporter::importNode(::ONNX_NAMESPACE::NodeProto const& no
   OnnxAttrs attrs(node);
   if (!attrs.get<std::vector<float>>("trt_outputs_range_min", {}).empty()) {
     nvinfer1::ILayer* layer = _importer_ctx.network()->getLayer(nbLayersBefore);
-    layer->setName(node.name().c_str());
+    // if layer is nullptr, it means this layer is a no-op
+    // and is optimized away by the parser
+    if (layer) {
+      layer->setName(node.name().c_str());
+    }
   }
 
   ASSERT(outputs.size() <= (size_t) node.output().size(), ErrorCode::kINTERNAL_ERROR);
