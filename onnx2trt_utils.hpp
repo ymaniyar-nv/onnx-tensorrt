@@ -327,16 +327,22 @@ void get_kernel_params(::ONNX_NAMESPACE::NodeProto const& onnx_node,
                        nvinfer1::PaddingMode& paddingMode,
                        nvinfer1::Dims* dilations=nullptr);
 
-inline nvinfer1::ScaleMode get_scale_mode(nvinfer1::Dims const& weights_shape) {
-  if( weights_shape.nbDims == 1 ) {
-    if( weights_shape.d[0] == 1 ) {
+inline nvinfer1::ScaleMode get_scale_mode(nvinfer1::Dims const& weights_shape,
+                                          nvinfer1::Dims const& tensor_shape) 
+{
+  if (weights_shape.nbDims == 1)
+  {
+    if (weights_shape.d[0] == 1)
+    {
       return nvinfer1::ScaleMode::kUNIFORM;
-    } else {
+    } 
+    // Check for channel wide scale - assume tensor shape is CHW.
+    else if (weights_shape.d[0] == tensor_shape.d[0])
+    {
       return nvinfer1::ScaleMode::kCHANNEL;
     }
-  } else {
-    return nvinfer1::ScaleMode::kELEMENTWISE;
-  }
+  } 
+  return nvinfer1::ScaleMode::kELEMENTWISE;
 }
 
 } // namespace onnx2trt

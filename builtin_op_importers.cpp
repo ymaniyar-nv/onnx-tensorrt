@@ -337,8 +337,10 @@ combineTensorsElementwise(IImporterContext* ctx,
 }
 
 Status check_broadcast_attrs(IImporterContext* ctx, OnnxAttrs const& attrs,
-                             nvinfer1::Dims const& dims) {
-  if (ctx->getOpsetVersion() < 7) {
+                             nvinfer1::Dims const& dims) 
+{
+  if (ctx->getOpsetVersion() < 7) 
+  {
     ASSERT(attrs.count("broadcast"), ErrorCode::kUNSUPPORTED_NODE);
     bool broadcast = attrs.get<int>("broadcast");
     ASSERT(broadcast || dims.nbDims == 1, ErrorCode::kINVALID_NODE);
@@ -358,34 +360,39 @@ enum ScaleOp {
 
 NodeImportResult importScaleOp(IImporterContext* ctx,
                                ::ONNX_NAMESPACE::NodeProto const& node,
-                               TensorOrWeights& input0,
-                               TensorOrWeights& input1,
+                               std::vector<TensorOrWeights>& inputs,
                                ScaleOp op) {
-  auto* tensor_ptr = (input0.is_tensor() ?
-                      &input0.tensor() :
-                      &input1.tensor());
-  auto weights = (input0.is_weights() ?
-                        input0.weights() :
-                        input1.weights());
+  nvinfer1::ITensor* tensor_ptr = (inputs.at(0).is_tensor() ?
+                                  &inputs.at(0).tensor() :
+                                  &inputs.at(1).tensor());
+  ShapedWeights weights = (inputs.at(0).is_weights() ?
+                          inputs.at(0).weights() :
+                          inputs.at(1).weights());
   nvinfer1::Dims dims = tensor_ptr->getDimensions();
   // Note: ONNX opset >= 7 uses Numpy-style broadcasting, so dims are padded
   // at the end with ones for broadcasting.
   weights.shape = squeeze_trailing_dims(weights.shape);
-  nvinfer1::ScaleMode mode = get_scale_mode(weights.shape);
-  if( mode == nvinfer1::ScaleMode::kELEMENTWISE ) {
-    // TODO: TRT doesn't support including the batch dim in elementwise,
-    //       but we can't do a more specific assertion here yet because
-    //       the input tensor's shape may have been padded to WAR TRT's
-    //       shape issues.
-    ASSERT(get_shape_size(weights.shape) == get_shape_size(dims),
-           ErrorCode::kUNSUPPORTED_NODE);
-  } else if( mode == nvinfer1::ScaleMode::kCHANNEL ) {
-    OnnxAttrs attrs(node);
-    // TRT does not currently support full broadcasting
-    TRT_CHECK(check_broadcast_attrs(ctx, attrs, dims));
-    ASSERT(weights.shape.d[0] == dims.d[0],
-           ErrorCode::kUNSUPPORTED_NODE);
-  }
+  nvinfer1::ScaleMode mode = get_scale_mode(weights.shape, dims);
+  if (mode == nvinfer1::ScaleMode::kELEMENTWISE)
+  {
+    nvinfer1::ElementWiseOperation elementwise_op = {};
+    switch (op)
+    {
+      case kSHIFT: elementwise_op = nvinfer1::ElementWiseOperation::kSUM; break;
+      case kSCALE: elementwise_op = nvinfer1::ElementWiseOperation::kPROD; break;
+      case kPOWER: elementwise_op = nvinfer1::ElementWiseOperation::kPOW; break;
+    }
+    // If shapes do not entirely match up, an elementwise layer is needed instead
+    // to support full broadcasting.
+    if (get_shape_size(weights.shape) != get_shape_size(dims))
+    {
+      return combineTensorsElementwise(ctx,
+                          node,
+                          inputs,
+                          elementwise_op,
+                          true);
+    }
+  } 
   nvinfer1::Weights shift_weights = {};
   nvinfer1::Weights scale_weights = {};
   nvinfer1::Weights power_weights = {};
@@ -532,6 +539,13 @@ DEFINE_BUILTIN_OP_IMPORTER(Abs) {
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Add) {
+
+  if (inputs.at(0).is_tensor() != inputs.at(1).is_tensor())
+  {
+    return importScaleOp(
+        ctx, node, inputs, ScaleOp::kSHIFT);
+  }
+
   return combineTensorsElementwise(
       ctx, node, inputs, nvinfer1::ElementWiseOperation::kSUM, true);
 }
@@ -1427,6 +1441,12 @@ DEFINE_BUILTIN_OP_IMPORTER(Min) {
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Mul) {
+  // Explicit precision networks need scale layer over elementwise
+  if (inputs.at(0).is_tensor() != inputs.at(1).is_tensor())
+  {
+    return importScaleOp(
+        ctx, node, inputs, ScaleOp::kSCALE);
+  }
   return combineTensorsElementwise(
       ctx, node, inputs, nvinfer1::ElementWiseOperation::kPROD, true);
 }
@@ -1471,6 +1491,12 @@ DEFINE_BUILTIN_OP_IMPORTER(Pad) {
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Pow) {
+
+  if (inputs.at(0).is_tensor() != inputs.at(1).is_tensor())
+  {
+    return importScaleOp(
+        ctx, node, inputs, ScaleOp::kPOWER);
+  }
   ASSERT(inputs.size() == 2, ErrorCode::kINVALID_NODE);
   return combineTensorsElementwise(
     ctx, node, inputs, nvinfer1::ElementWiseOperation::kPOW, true);
