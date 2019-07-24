@@ -95,9 +95,13 @@ set(RUNTIME_LINKER_SCRIPT ${ONNX2TRT_ROOT}/libnvonnxparser_runtime.version)
 #--------------------------------------------------
 # Version information
 #--------------------------------------------------
-set(ONNX2TRT_MAJOR 0)
-set(ONNX2TRT_MINOR 1)
-set(ONNX2TRT_PATCH 0)
+set_ifndef(TRT_MAJOR 0)
+set_ifndef(TRT_MINOR 1)
+set_ifndef(TRT_PATCH 0)
+
+set(ONNX2TRT_MAJOR ${TRT_MAJOR})
+set(ONNX2TRT_MINOR ${TRT_MINOR})
+set(ONNX2TRT_PATCH ${TRT_PATCH})
 
 #--------------------------------------------------
 # Build configurations, global to all projects
