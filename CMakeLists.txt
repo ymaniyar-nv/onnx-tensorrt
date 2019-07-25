@@ -27,7 +27,7 @@ include(FindPackageHandleStandardArgs)
 #  ToDo Factor this out to a common Cmake Include file.
 # Sets variable to a value if variable is unset.
 macro(set_ifndef var val)
-    if(NOT ${var})
+    if(NOT DEFINED ${var})
         set(${var} ${val})
     endif()
 endmacro()
