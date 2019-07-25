@@ -337,9 +337,9 @@ combineTensorsElementwise(IImporterContext* ctx,
 }
 
 Status check_broadcast_attrs(IImporterContext* ctx, OnnxAttrs const& attrs,
-                             nvinfer1::Dims const& dims) 
+                             nvinfer1::Dims const& dims)
 {
-  if (ctx->getOpsetVersion() < 7) 
+  if (ctx->getOpsetVersion() < 7)
   {
     ASSERT(attrs.count("broadcast"), ErrorCode::kUNSUPPORTED_NODE);
     bool broadcast = attrs.get<int>("broadcast");
@@ -392,7 +392,7 @@ NodeImportResult importScaleOp(IImporterContext* ctx,
                           elementwise_op,
                           true);
     }
-  } 
+  }
   nvinfer1::Weights shift_weights = {};
   nvinfer1::Weights scale_weights = {};
   nvinfer1::Weights power_weights = {};
@@ -1673,12 +1673,12 @@ DEFINE_BUILTIN_OP_IMPORTER(Reshape) {
            ErrorCode::kUNSUPPORTED_NODE);
     weights.shape = new_shape;
     return {{weights}};
-  } 
+  }
   else {
     new_shape = set_dims_CHW(remove_dim(new_shape, BATCH_DIM));
     nvinfer1::ITensor& tensor = input.tensor();
     TRT_CHECK(get_infer_dim(infer_dim,new_shape));
-    if (infer_dim >= 0) 
+    if (infer_dim >= 0)
     {
       // Update the dim to the correct value
       int new_dim = get_shape_size(tensor.getDimensions()) / (-1 * get_shape_size(new_shape));
@@ -1694,7 +1694,7 @@ DEFINE_BUILTIN_OP_IMPORTER(Reshape) {
       //       requires that it still has 4D shape, so in this case we
       //       simply ignore the reshape.
       RETURN_IDENTITY(inputs.at(0));
-    } 
+    }
     else {
       ASSERT(new_shape.nbDims == 3, ErrorCode::kUNSUPPORTED_NODE);
       nvinfer1::IShuffleLayer* layer = ctx->network()->addShuffle(tensor);
