@@ -78,7 +78,7 @@ set(CMAKE_CXX_STANDARD  11)
 add_compile_options(-std=c++11)
 # Enable compiler warnings
 if ( CMAKE_COMPILER_IS_GNUCC )
-    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall")
+    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Wno-deprecated-declarations")
 endif()
 # Enable compiler warnings and build library flag on Windows.
 if ( MSVC )

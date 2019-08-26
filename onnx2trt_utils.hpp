@@ -40,7 +40,7 @@ public:
     nvinfer1::DimsHW stride, nvinfer1::DimsHW padding, nvinfer1::DimsHW dilation, const char* layerName) const
   {
     nvinfer1::DimsHW outputDims;
-    for(size_t dimension = 0; dimension < inputDims.nbDims; dimension++)
+    for (int dimension = 0; dimension < inputDims.nbDims; dimension++)
     {
       outputDims.d[dimension] = static_cast<int>(ceil((inputDims.d[dimension] + padding.d[dimension] * 2.0 - kernelSize.d[dimension]) / stride.d[dimension] + 1.0));
     }
@@ -124,6 +124,62 @@ inline const char* get_dtype_name(int32_t onnx_dtype) {
   case ::ONNX_NAMESPACE::TensorProto::COMPLEX128: return "COMPLEX128";
   default: return "<UNKNOWN>";
   }
+}
+
+inline nvinfer1::ITensor* reshape_tensor(IImporterContext* ctx,
+               nvinfer1::ITensor& tensor,
+               nvinfer1::Dims shape) {
+  if( shape == tensor.getDimensions() ) {
+    return &tensor;
+  }
+  nvinfer1::IShuffleLayer* layer = ctx->network()->addShuffle(tensor);
+  if( !layer ) {
+    return nullptr;
+  }
+  layer->setReshapeDimensions(shape);
+  return layer->getOutput(0);
+}
+
+inline void broadcast_tensors(IImporterContext* ctx, nvinfer1::ITensor*& t1, nvinfer1::ITensor*& t2)
+{
+    if (t1->getDimensions().nbDims == t2->getDimensions().nbDims)
+    {
+        return;
+    }
+    nvinfer1::ITensor* largeTensor;
+    nvinfer1::ITensor* smallTensor;
+    if (t1->getDimensions().nbDims > t2->getDimensions().nbDims)
+    {
+        largeTensor = t1;
+        smallTensor = t2;
+    }
+    else
+    {
+        largeTensor = t2;
+        smallTensor = t1;
+    }
+
+    nvinfer1::Dims largeDims = largeTensor->getDimensions();
+    nvinfer1::Dims smallDims = smallTensor->getDimensions();
+    // Create placeholder dimensions to check broadcasting
+    nvinfer1::Dims newDims{largeDims.nbDims, {1, 1, 1, 1, 1, 1, 1, 1}};
+
+    int i(0), j(0);
+    while (i < smallDims.nbDims && j < largeDims.nbDims)
+    {
+        if (smallDims.d[i] == largeDims.d[j])
+        {
+            newDims.d[j] = largeDims.d[j];
+            i++;
+            j++;
+        }
+        else
+        {
+            j++;
+        }
+    }
+
+    t1 == smallTensor ? t1 = reshape_tensor(ctx, *t1, newDims) : t2 = reshape_tensor(ctx, *t2, newDims);
 }
 
 inline bool convert_dtype(int32_t onnx_dtype,

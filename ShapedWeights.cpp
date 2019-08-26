@@ -97,7 +97,9 @@ ShapedWeights::operator nvinfer1::Weights() const {
     }
     else
     {
-      w.values = static_cast<void*>(int32_weights.data());
+      void * int32_weights_ptr = static_cast<void *>(int32_weights.data());
+      std::memcpy(this->values, int32_weights_ptr, int32_weights.size() * sizeof(int32_t));
+      w.values = this->values;
       cout << "Successfully casted down to INT32." << endl;
     }
   }
@@ -112,6 +114,21 @@ ShapedWeights::operator nvinfer1::Weights() const {
   return w;
 }
 
+template<typename DType>
+void transpose2DWeights(ShapedWeights const& weights,
+                        nvinfer1::Dims const& new_shape,
+                        ShapedWeights* result) {
+  DType const* src = reinterpret_cast<DType*>(weights.values);
+  DType*       dst = reinterpret_cast<DType*>(result->values);
+  int src_stride = weights.shape.d[1];
+  int dst_stride = result->shape.d[1];
+  for (int i = 0; i < new_shape.d[0]; ++i) {
+    for (int j = 0; j < new_shape.d[1]; ++j) {
+      dst[i * dst_stride + j] = src[j * src_stride + i];
+    }
+  }
+}
+
 bool transposeWeights(ShapedWeights const& weights,
                       nvinfer1::Permutation const& perm,
                       ShapedWeights* result) {
@@ -124,18 +141,23 @@ bool transposeWeights(ShapedWeights const& weights,
   }
   // TODO: Need to generalize this transpose implementation
   assert(perm.order[0] == 1 && perm.order[1] == 0);
-  if( shape.nbDims == 2 &&
-      weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT ) {
-    for( int i=0; i<new_shape.d[0]; ++i ) {
-      for( int j=0; j<new_shape.d[1]; ++j ) {
-        float const* src = (float*)weights.values;
-        float*       dst = (float*)result->values;
-        int src_stride = weights.shape.d[1];
-        int dst_stride = result->shape.d[1];
-        dst[i * dst_stride + j] = src[j * src_stride + i];
-      }
+  if (shape.nbDims == 2) 
+  {
+    if (weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT) 
+    {
+      transpose2DWeights<float>(weights, new_shape, result);
+    } 
+    else if (weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT16) 
+    {
+      transpose2DWeights<uint16_t>(weights, new_shape, result);
+    } 
+    else 
+    {
+      return false;
     }
-  } else {
+  }
+  else 
+  {
     // TODO: Implement general transposes and multiple data types
     // Unsupported weights transpose
     return false;
