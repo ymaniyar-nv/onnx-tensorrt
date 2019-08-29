@@ -1124,9 +1124,9 @@ DEFINE_BUILTIN_OP_IMPORTER(Gemm)
     nvinfer1::MatrixOperation opB = getMatrixOp(*inputB, transB);
 
     if (opA == nvinfer1::MatrixOperation::kVECTOR && opB == nvinfer1::MatrixOperation::kVECTOR)
-    {   
-        ASSERT(inputASqueezed->getDimensions() == inputB->getDimensions(), ErrorCode::kUNSUPPORTED_NODE);   
-    }    
+    {
+        ASSERT(inputASqueezed->getDimensions() == inputB->getDimensions(), ErrorCode::kUNSUPPORTED_NODE);
+    }
 
     LOG_VERBOSE("Using opA: " << static_cast<int>(opA) << " opB: " << static_cast<int>(opB));
     LOG_VERBOSE("GEMM: A, after squeezing: " << inputASqueezed->getDimensions());
@@ -1138,7 +1138,7 @@ DEFINE_BUILTIN_OP_IMPORTER(Gemm)
     if (alpha != 1.f)
     {
         nvinfer1::IConstantLayer* alphaConstant = addConstantScalar(ctx, alpha, ::ONNX_NAMESPACE::TensorProto_DataType_FLOAT);
-        nvinfer1::ITensor* alphaConstantTensor = alphaConstant->getOutput(0);   
+        nvinfer1::ITensor* alphaConstantTensor = alphaConstant->getOutput(0);
         broadcast_tensors(ctx, alphaConstantTensor, matmulTensor);
         nvinfer1::IElementWiseLayer* scaledMatmul = ctx->network()->addElementWise(*alphaConstant->getOutput(0), *matmulTensor, nvinfer1::ElementWiseOperation::kPROD);
         matmulTensor = scaledMatmul->getOutput(0);
@@ -1148,7 +1148,7 @@ DEFINE_BUILTIN_OP_IMPORTER(Gemm)
     if (beta != 1.f)
     {
         nvinfer1::IConstantLayer* betaConstant = addConstantScalar(ctx, beta, ::ONNX_NAMESPACE::TensorProto_DataType_FLOAT);
-        nvinfer1::ITensor* betaConstantTensor = betaConstant->getOutput(0);   
+        nvinfer1::ITensor* betaConstantTensor = betaConstant->getOutput(0);
         broadcast_tensors(ctx, betaConstantTensor, biasTensor);
         nvinfer1::IElementWiseLayer* scaledBias = ctx->network()->addElementWise(*betaConstant->getOutput(0), *biasTensor, nvinfer1::ElementWiseOperation::kPROD);
         biasTensor = scaledBias->getOutput(0);
@@ -2050,59 +2050,62 @@ DEFINE_BUILTIN_OP_IMPORTER(Resize) {
 #endif
 
 DEFINE_BUILTIN_OP_IMPORTER(Upsample) {
-  // Retrieve and validate input tensor
-  nvinfer1::ITensor &tensor = convertToTensor(inputs.at(0), ctx);
-  const int nbDims = tensor.getDimensions().nbDims;
-  // Input tensor has no batch dimension.
-  const int nbSpatialDims = nbDims - 1;
-  ASSERT(nbSpatialDims == 2 || nbSpatialDims == 3, ErrorCode::kUNSUPPORTED_NODE);
-  OnnxAttrs attrs(node);
-  // Resize layer needs scale factors size equals input tensor dims.
-  const int num_scales = nbDims;
-  std::vector<float> scale_factors(num_scales, 1.0f);
-  if (ctx->getOpsetVersion() >= 9) {
-    // Get scale factors from inputs[1]
-    ASSERT(inputs.size() == 2, ErrorCode::kINVALID_NODE);
-    auto scales_input = inputs.at(1);
-    // Retrieve and validate scale factors.
-    ASSERT(scales_input.is_weights(), ErrorCode::kUNSUPPORTED_NODE);
-    ShapedWeights scales_weights = scales_input.weights();
-    ASSERT(scales_weights.shape.nbDims == 1, ErrorCode::kUNSUPPORTED_NODE);
-    // Scale factors has batch dimension.
-    ASSERT(scales_weights.count() == num_scales + 1, ErrorCode::kUNSUPPORTED_NODE);
-    ASSERT(scales_weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT,
-           ErrorCode::kINVALID_NODE);
-    float const *scales_ptr = static_cast<float const *>(scales_weights.values);
-    for(int i = 0; i < num_scales; i++){
-      scale_factors[i] = scales_ptr[i + 1];
-    }
-  } 
-  else 
-  {
-    ASSERT(attrs.count("scales"), ErrorCode::kUNSUPPORTED_NODE);
-    // Get scale factors from OnnxAttrs.
-    auto scales = attrs.get<std::vector<float>>("scales");
-    // Scale factors has batch dimension.
-    ASSERT(scales.size() == nbDims, ErrorCode::kUNSUPPORTED_NODE);
-    for (int i = 0; i < nbDims; i++)
+    // Retrieve and validate input tensor
+    nvinfer1::ITensor &tensor = convertToTensor(inputs.at(0), ctx);
+    const int nbDims = tensor.getDimensions().nbDims;
+    // Input tensor has no batch dimension.
+    const int nbSpatialDims = nbDims - 1;
+    ASSERT(nbSpatialDims == 2 || nbSpatialDims == 3, ErrorCode::kUNSUPPORTED_NODE);
+    OnnxAttrs attrs(node);
+    // Resize layer needs scale factors size equals input tensor dims.
+    const int num_scales = nbDims;
+    std::vector<float> scale_factors(num_scales, 1.0f);
+    if (ctx->getOpsetVersion() >= 9)
     {
-        scale_factors[i] = scales[i];
+        // Get scale factors from inputs[1]
+        ASSERT(inputs.size() == 2, ErrorCode::kINVALID_NODE);
+        auto scales_input = inputs.at(1);
+        // Retrieve and validate scale factors.
+        ASSERT(scales_input.is_weights(), ErrorCode::kUNSUPPORTED_NODE);
+        ShapedWeights scales_weights = scales_input.weights();
+        ASSERT(scales_weights.shape.nbDims == 1, ErrorCode::kUNSUPPORTED_NODE);
+        // Scale factors has batch dimension.
+        ASSERT(scales_weights.count() == num_scales + 1, ErrorCode::kUNSUPPORTED_NODE);
+        ASSERT(scales_weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT,
+               ErrorCode::kINVALID_NODE);
+        float const *scales_ptr = static_cast<float const *>(scales_weights.values);
+        for(int i = 0; i < num_scales; i++)
+        {
+            scale_factors[i] = scales_ptr[i + 1];
+        }
     }
-  }
-  auto mode = attrs.get<std::string>("mode", "nearest");
-  ASSERT(mode == "nearest" || mode == "linear", ErrorCode::kUNSUPPORTED_NODE);
-  // Set default resize mode. Nearest resize support N-D (where 0 < N <= 8) resize.
-  nvinfer1::ResizeMode resizeMode = nvinfer1::ResizeMode::kNEAREST;
-  if (mode == "linear")
-  {
-      // Linear resize support 1-D, 2-D and 3D resize.
-      resizeMode = nvinfer1::ResizeMode::kLINEAR;
-  }
-  // Add resize layer
-  nvinfer1::IResizeLayer* const layer = ctx->network()->addResize(tensor);
-  layer->setScales(scale_factors.data(), num_scales);
-  layer->setResizeMode(resizeMode);
-  RETURN_FIRST_OUTPUT(layer);
+    else
+    {
+        ASSERT(attrs.count("scales"), ErrorCode::kUNSUPPORTED_NODE);
+        // Get scale factors from OnnxAttrs.
+        auto scales = attrs.get<std::vector<float>>("scales");
+        // Scale factors has batch dimension.
+        ASSERT(scales.size() == nbDims + 1, ErrorCode::kUNSUPPORTED_NODE);
+        ASSERT(scales.at(0) == 1, ErrorCode::kUNSUPPORTED_NODE);
+        for (int i = 0; i < nbDims; ++i)
+        {
+            scale_factors[i] = scales[i + 1];
+        }
+    }
+    auto mode = attrs.get<std::string>("mode", "nearest");
+    ASSERT(mode == "nearest" || mode == "linear", ErrorCode::kUNSUPPORTED_NODE);
+    // Set default resize mode. Nearest resize support N-D (where 0 < N <= 8) resize.
+    nvinfer1::ResizeMode resizeMode = nvinfer1::ResizeMode::kNEAREST;
+    if (mode == "linear")
+    {
+        // Linear resize support 1-D, 2-D and 3D resize.
+        resizeMode = nvinfer1::ResizeMode::kLINEAR;
+    }
+    // Add resize layer
+    nvinfer1::IResizeLayer* const layer = ctx->network()->addResize(tensor);
+    layer->setScales(scale_factors.data(), num_scales);
+    layer->setResizeMode(resizeMode);
+    RETURN_FIRST_OUTPUT(layer);
 }
 
 // TRT-7031: add tests
