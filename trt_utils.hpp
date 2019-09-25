@@ -33,19 +33,18 @@
 
 namespace onnx2trt {
 
-inline int get_dtype_size(nvinfer1::DataType trt_dtype) {
-  switch( trt_dtype ) {
-  case nvinfer1::DataType::kFLOAT: return 4;
-  case nvinfer1::DataType::kINT8:  return 1;
-  case nvinfer1::DataType::kHALF:  return 2;
-#if NV_TENSORRT_MAJOR >= 4
-  case nvinfer1::DataType::kINT32: return 4;
-#endif
-    // TODO: Some sort of error handling
-  default: return -1;
-    //throw std::invalid_argument("Unsupported TRT data type: " +
-    //                  std::to_string((int)trt_dtype));
-  }
+inline int getDtypeSize(nvinfer1::DataType trtDtype) {
+      switch (trtDtype)
+      {
+        case nvinfer1::DataType::kFLOAT: return 4;
+        case nvinfer1::DataType::kINT8:  return 1;
+        case nvinfer1::DataType::kHALF:  return 2;
+        case nvinfer1::DataType::kINT32: return 4;
+        // TRT does not support booleans as a native type, so we treat them like int32 values.
+        case nvinfer1::DataType::kBOOL: return 4;
+        // TODO: Some sort of error handling
+        default: return -1;
+    }
 }
 
 inline int64_t get_shape_size(nvinfer1::Dims shape) {
@@ -66,12 +65,10 @@ inline nvinfer1::Dims insert_dim(nvinfer1::Dims const& dims, int idx, int value)
   new_dims.nbDims = dims.nbDims + 1;
   for( int i=0; i<idx; ++i ) {
     new_dims.d[i]    = dims.d[i];
-    new_dims.type[i] = dims.type[i];
   }
   new_dims.d[idx] = value;
   for( int i=idx+1; i<new_dims.nbDims; ++i ) {
     new_dims.d[i]    = dims.d[i - 1];
-    new_dims.type[i] = dims.type[i - 1];
   }
   return new_dims;
 }
@@ -82,17 +79,14 @@ inline nvinfer1::Dims remove_dim(nvinfer1::Dims const& dims, int idx) {
   new_dims.nbDims = dims.nbDims - 1;
   for( int i=0; i<idx; ++i ) {
     new_dims.d[i]    = dims.d[i];
-    new_dims.type[i] = dims.type[i];
   }
   for( int i=idx; i<new_dims.nbDims; ++i ) {
     new_dims.d[i]    = dims.d[i + 1];
-    new_dims.type[i] = dims.type[i + 1];
   }
   // Special case for scalar result (i.e., there was only one dim originally)
   if( new_dims.nbDims == 0 ) {
     new_dims.nbDims = 1;
     new_dims.d[0] = 1;
-    new_dims.type[0] = nvinfer1::DimensionType::kCHANNEL;
   }
   return new_dims;
 }
@@ -140,16 +134,6 @@ inline nvinfer1::Dims squeeze_leading_dims(const nvinfer1::Dims& dims) {
     return newDims;
 }
 
-inline nvinfer1::Dims set_dims_CHW(nvinfer1::Dims const& dims) {
-  nvinfer1::Dims new_dims = dims;
-  assert(new_dims.nbDims > 0);
-  new_dims.type[0] = nvinfer1::DimensionType::kCHANNEL;
-  for( int i=1; i<new_dims.nbDims; ++i ) {
-    new_dims.type[i] = nvinfer1::DimensionType::kSPATIAL;
-  }
-  return new_dims;
-}
-
 inline nvinfer1::DimsHW operator-(nvinfer1::DimsHW dims) {
   return nvinfer1::DimsHW(-dims.h(), -dims.w());
 }
@@ -186,6 +170,20 @@ inline TensorOrWeights identity(IImporterContext* ctx,
     }
     return layer->getOutput(0);
   }
+}
+
+inline ::ONNX_NAMESPACE::TensorProto_DataType trtDataTypeToONNX(nvinfer1::DataType dt)
+{
+    switch (dt)
+    {
+        case nvinfer1::DataType::kFLOAT: return ::ONNX_NAMESPACE::TensorProto::FLOAT;
+        case nvinfer1::DataType::kHALF: return ::ONNX_NAMESPACE::TensorProto::FLOAT16;
+        case nvinfer1::DataType::kINT32: return ::ONNX_NAMESPACE::TensorProto::INT32;
+        case nvinfer1::DataType::kINT8: return ::ONNX_NAMESPACE::TensorProto::INT8;
+        case nvinfer1::DataType::kBOOL: return ::ONNX_NAMESPACE::TensorProto::BOOL;
+        default: return ::ONNX_NAMESPACE::TensorProto_DataType_UNDEFINED;
+    }
+    throw std::runtime_error{"Unreachable"};
 }
 
 namespace detail {

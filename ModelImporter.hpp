@@ -30,6 +30,8 @@
 
 namespace onnx2trt {
 
+Status parseGraph(IImporterContext* ctx, const ::ONNX_NAMESPACE::GraphProto& graph, bool deserializingINetwork = false);
+
 class ModelImporter : public nvonnxparser::IParser {
 protected:
   string_map<NodeImporter> _op_importers;
@@ -41,9 +43,6 @@ private:
   std::list<::ONNX_NAMESPACE::ModelProto> _onnx_models; // Needed for ownership of weights
   int _current_node;
   std::vector<Status> _errors;
-
-  NodeImportResult importNode(::ONNX_NAMESPACE::NodeProto const& node,
-                              std::vector<TensorOrWeights>& inputs);
 public:
   ModelImporter(nvinfer1::INetworkDefinition* network,
                 nvinfer1::ILogger* logger)
@@ -77,7 +76,7 @@ public:
 
   //...LG: Move the implementation to .cpp
   bool parseFromFile(const char* onnxModelFile, int verbosity) override;
-  
+
 };
 
 } // namespace onnx2trt

@@ -93,17 +93,6 @@ nv_onnx_parser_module = Extension(
     extra_compile_args=EXTRA_COMPILE_ARGS,
     extra_link_args=EXTRA_LINK_ARGS)
 
-nv_onnx_runtime_module = Extension(
-    'onnx_tensorrt.runtime._nv_onnx_runtime_bindings',
-    sources=['nv_onnx_runtime_bindings.i'],
-    swig_opts=SWIG_OPTS,
-    extra_objects=[
-        args.build_lib + '/libnvonnxparser_runtime.so',
-    ],
-    include_dirs=INC_DIRS,
-    extra_compile_args=EXTRA_COMPILE_ARGS,
-    extra_link_args=EXTRA_LINK_ARGS)
-
 setup(name='onnx_tensorrt',
       version=__version__,
       description='TensorRT backend for ONNX',

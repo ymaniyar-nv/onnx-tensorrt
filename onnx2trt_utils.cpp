@@ -42,7 +42,9 @@ void get_kernel_params(::ONNX_NAMESPACE::NodeProto const& onnx_node,
                        nvinfer1::Dims* beg_padding,
                        nvinfer1::Dims* end_padding,
                        nvinfer1::PaddingMode& paddingMode,
-                       nvinfer1::Dims* dilations) {
+                       bool & count_exclude_padding,
+                       nvinfer1::Dims* dilations,
+                       nvinfer1::Dims* output_padding) {
   const int nbSpatialDims = kernel_size->nbDims;
   OnnxAttrs attrs(onnx_node);
   if( attrs.count("kernel_shape") ) {
@@ -57,9 +59,19 @@ void get_kernel_params(::ONNX_NAMESPACE::NodeProto const& onnx_node,
     auto const* onnx_dilations = attrs.at("dilations");
     setAttr(dilations, onnx_dilations, nbSpatialDims, 1);
   }
+  if( attrs.count("count_include_pad")){
+    auto const* include_pad = attrs.at("count_include_pad");
+    int val = include_pad->i();
+    val == 1 ? count_exclude_padding=false : count_exclude_padding=true; 
+  }
+  //For ConvTranspose Layer
+  if( attrs.count("output_padding") ) {
+    *output_padding = attrs.get<nvinfer1::Dims>("output_padding");
+  }
+
   paddingMode = nvinfer1::PaddingMode::kEXPLICIT_ROUND_DOWN;
   auto onnx_auto_pad = attrs.get("auto_pad", std::string("NOTSET"));
-  if( onnx_auto_pad == "VALID" || onnx_auto_pad == "NOTSET" ) {
+  if( onnx_auto_pad != "SAME_LOWER" && onnx_auto_pad != "SAME_UPPER" ) {
     if( attrs.count("pads") ) {
       auto onnx_padding = attrs.get<std::vector<int>>("pads");
       int ndim = onnx_padding.size() / 2;
@@ -73,13 +85,30 @@ void get_kernel_params(::ONNX_NAMESPACE::NodeProto const& onnx_node,
         }
       }
     }
-  } else { // SAME_* padding
+    if ( onnx_auto_pad != "VALID" && onnx_auto_pad != "NOTSET")
+    {
+      if( onnx_auto_pad == "EXPLICIT_ROUND_UP" )
+      {
+        paddingMode = nvinfer1::PaddingMode::kEXPLICIT_ROUND_UP;
+      }
+      else if( onnx_auto_pad == "CAFFE_ROUND_DOWN" )
+      {
+        paddingMode = nvinfer1::PaddingMode::kCAFFE_ROUND_DOWN;
+      }
+      else if( onnx_auto_pad == "CAFFE_ROUND_UP" )
+      {
+        paddingMode = nvinfer1::PaddingMode::kCAFFE_ROUND_UP;
+      }
+    }
+  } else { 
+    // If auto_pad is SAME_LOWER or SAME_UPPER, input padding should be calculated
+    // "pads" attribute should not be specified
     assert(!attrs.count("pads"));
     // Note: ONNX is always NCHW ordering
     if( onnx_auto_pad == "SAME_LOWER" ) {
-	  paddingMode = nvinfer1::PaddingMode::kSAME_LOWER;
+      paddingMode = nvinfer1::PaddingMode::kSAME_LOWER;
     } else if( onnx_auto_pad == "SAME_UPPER" ) {
-	  paddingMode = nvinfer1::PaddingMode::kSAME_UPPER;
+      paddingMode = nvinfer1::PaddingMode::kSAME_UPPER;
     } else {
       throw std::invalid_argument("Unexpected auto_pad value: " +
                                   onnx_auto_pad);

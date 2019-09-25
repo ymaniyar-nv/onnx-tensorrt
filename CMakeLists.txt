@@ -54,12 +54,12 @@ endif()
 # so we will do it only for older versions of cmake
 if(${CMAKE_VERSION} VERSION_LESS ${CMAKE_VERSION_THRESHOLD})
   find_package(CUDA REQUIRED)
-endif()  
+endif()
 
 if ( MSVC )
   set(CMAKE_FIND_LIBRARY_SUFFIXES ${W10_LIBRARY_SUFFIXES})
 endif()
-  
+
 # Allows us to create standalone wheels. Strip debug symbols from release builds:
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(CMAKE_SHARED_LINKER_FLAGS -Wl,-rpath=$ORIGIN)
@@ -78,19 +78,18 @@ set(CMAKE_CXX_STANDARD  11)
 add_compile_options(-std=c++11)
 # Enable compiler warnings
 if ( CMAKE_COMPILER_IS_GNUCC )
-    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Wno-deprecated-declarations")
+    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Wno-deprecated-declarations -Wno-unused-function")
 endif()
 # Enable compiler warnings and build library flag on Windows.
 if ( MSVC )
      add_compile_options(-DTENSORRT_BUILD_LIB)
-     set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} /W4 /FS") 
+     set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} /W4 /FS")
 endif()
 
 # Build the libraries with -fPIC
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(PARSER_LINKER_SCRIPT  ${ONNX2TRT_ROOT}/libnvonnxparser.version)
-set(RUNTIME_LINKER_SCRIPT ${ONNX2TRT_ROOT}/libnvonnxparser_runtime.version)
 
 #--------------------------------------------------
 # Version information
@@ -107,14 +106,6 @@ set(ONNX2TRT_PATCH ${TRT_PATCH})
 # Build configurations, global to all projects
 #--------------------------------------------------
 
-set(PLUGIN_SOURCES
-  FancyActivation.cu
-  ResizeNearest.cu
-  Split.cu
-  InstanceNormalization.cpp
-  plugin.cpp
-  )
-
 set(IMPORTER_SOURCES
   NvOnnxParser.cpp
   ModelImporter.cpp
@@ -122,12 +113,6 @@ set(IMPORTER_SOURCES
   onnx2trt_utils.cpp
   ShapedWeights.cpp
   OnnxAttrs.cpp
-)
-
-set(RUNTIME_SOURCES
-  NvOnnxParserRuntime.cpp
-  PluginFactory.cpp
-  builtin_plugins.cpp
 )
 
 set(ONNXIFI_SOURCES onnx_trt_backend.cpp)
@@ -138,7 +123,6 @@ set(EXECUTABLE_SOURCES
 
 set(HEADERS
   NvOnnxParser.h
-  NvOnnxParserRuntime.h
 )
 
 
@@ -150,7 +134,7 @@ set(HEADERS
 if (NOT MSVC)
   find_package(Threads REQUIRED)
 endif()
-  
+
 #...PROTOBUF_LIBRARY_LOC1 is the location of the executable. Since we do crosscompile this should point to the
 #...host machine protoc executable only.
 set(PROTOBUF_LIBRARY_LOC1A ${PROTOBUF_SRC_ROOT_FOLDER}/${CMAKE_HOST_SYSTEM_PROCESSOR}/${PROTOBUF_VER})
@@ -214,7 +198,7 @@ if(DEFINED TRT_CXX_ABI)
 endif()
 
 add_definitions(${ADDITIONAL_PLATFORM_INCL_FLAGS})
-  
+
 #
 # CUDA Configuration
 #
@@ -231,9 +215,9 @@ endif()
 message(STATUS "Setting CUDA_DIR to ${CUDA_DIR}")
 
 if ( MSVC )
-  STRING(REGEX REPLACE "\\\\" "/" CUDA_DIR ${CUDA_DIR}) 
+  STRING(REGEX REPLACE "\\\\" "/" CUDA_DIR ${CUDA_DIR})
   find_library(CUDA_CUDART_LIBRARY NAMES cudart cudart.lib
-    HINTS ${CUDA_DIR} 
+    HINTS ${CUDA_DIR}
     PATH_SUFFIXES lib64 lib x64
     )
   find_library(CUDA_CUBLAS_LIBRARY NAMES cublas cublas.lib
@@ -242,7 +226,7 @@ if ( MSVC )
     )
 else()
   find_library(CUDA_CUDART_LIBRARY cudart
-    HINTS ${CUDA_DIR} 
+    HINTS ${CUDA_DIR}
     PATH_SUFFIXES lib64 lib
     )
   find_library(CUDA_CUBLAS_LIBRARY cublas
@@ -250,7 +234,7 @@ else()
     PATH_SUFFIXES lib64 lib
     )
 endif()
-  
+
 
 message(STATUS "Found cudart at ${CUDA_CUDART_LIBRARY}")
 message(STATUS "Found CUDA_ROOT at ${CUDA_ROOT}")
@@ -301,7 +285,7 @@ endforeach()
 # Generate PTX for the last architecture
 list(GET GPU_ARCHS -1 LATEST_GPU_ARCH)
 set(GENCODES "${GENCODES} -gencode arch=compute_${LATEST_GPU_ARCH},code=compute_${LATEST_GPU_ARCH}")
-  
+
 if ( MSVC )
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} \
      -cudart static \
@@ -325,7 +309,7 @@ else()
      --expt-extended-lambda \
      ${GENCODES} \
    ")
-  
+
 endif()
 # Specify the cuda host compiler to use the same compiler as cmake.
 set(CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
@@ -417,7 +401,7 @@ list(APPEND CUDA_NVCC_FLAGS "-Xcompiler -fPIC --expt-extended-lambda")
 # this is a hack, cudadevrt exists in CMAKE_CUDA_IMPLICIT_LINK_LIBRARIES linux_x86_64 build
 # but for android, CMAKE_CUDA_IMPLICIT_LINK_LIBRARIES is empty
 # tested on nvcc V10.0.95, and clang 5.0.300080 in ndk 16b, cmake 3.12.0
-if(CMAKE_C_COMPILER_TARGET STREQUAL aarch64-none-linux-android) 
+if(CMAKE_C_COMPILER_TARGET STREQUAL aarch64-none-linux-android)
     list(APPEND CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES ${CUDA_ROOT}/lib64)
     list(APPEND CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES ${CUDA_ROOT}/targets/aarch64-linux-androideabi/lib)
     list(APPEND CMAKE_CUDA_IMPLICIT_LINK_LIBRARIES cudadevrt)
@@ -425,23 +409,14 @@ endif()
 
 if(${CMAKE_VERSION} VERSION_LESS ${CMAKE_VERSION_THRESHOLD})
     CUDA_INCLUDE_DIRECTORIES(${CUDNN_INCLUDE_DIR} ${TENSORRT_INCLUDE_DIR} ${CUDA_INCLUDE_DIRS})
-    CUDA_ADD_LIBRARY(nvonnxparser_plugin STATIC ${PLUGIN_SOURCES})
 else()
     include_directories(${CUDNN_INCLUDE_DIR} ${TENSORRT_INCLUDE_DIR} ${CUDA_INCLUDE_DIRS})
     if(${NV_TARGET_OS} MATCHES "wddm2")
         #...LG: for windows it does not make sense to build static libs
-        set(CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES ${CUDA_TOOLKIT_ROOT_DIR}/include)	
+        set(CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES ${CUDA_TOOLKIT_ROOT_DIR}/include)
 
-        add_library(nvonnxparser_plugin STATIC ${PLUGIN_SOURCES})	
-
-        target_include_directories(nvonnxparser_plugin PUBLIC ${ONNX_INCLUDE_DIRS} ${TENSORRT_INCLUDE_DIR} ${CUDNN_INCLUDE_DIR} ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES} ${CUDA_INCLUDE_DIRS})
-        target_link_libraries(nvonnxparser_plugin PUBLIC ${TENSORRT_LIBRARY} ${CUDNN_LIBRARY} ${ADDITIONAL_PLATFORM_LIB_FLAGS})
     else()
         include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES} ${CUDA_INCLUDE_DIRS} ${CUDA_INC})
-
-        add_library(nvonnxparser_plugin STATIC ${PLUGIN_SOURCES})
-        target_include_directories(nvonnxparser_plugin PUBLIC ${ONNX_INCLUDE_DIRS} ${TENSORRT_INCLUDE_DIR} ${CUDNN_INCLUDE_DIR})
-        target_link_libraries(nvonnxparser_plugin PUBLIC ${TENSORRT_LIBRARY})
 
     endif()
 endif()
@@ -450,9 +425,9 @@ endif()
 # Use both IMPORTER and RUNTIME sources to build only one .dll
 if (MSVC)
 
-add_library(nvonnxparser SHARED ${IMPORTER_SOURCES} ${RUNTIME_SOURCES})
+add_library(nvonnxparser SHARED ${IMPORTER_SOURCES})
 target_include_directories(nvonnxparser PUBLIC ${ONNX_INCLUDE_DIRS} ${TENSORRT_INCLUDE_DIR} ${CUDNN_INCLUDE_DIR} ${CUDA_INCLUDE_DIRS} ${MSVC_COMPILER_DIR}/include)
-target_link_libraries(nvonnxparser PUBLIC onnx_proto nvonnxparser_plugin ${PROTOBUF_LIBRARY} ${CUDNN_LIBRARY} ${TENSORRT_LIBRARY})
+target_link_libraries(nvonnxparser PUBLIC onnx_proto ${PROTOBUF_LIBRARY} ${CUDNN_LIBRARY} ${TENSORRT_LIBRARY} ${ADDITIONAL_PLATFORM_LIB_FLAGS})
 set_target_properties(nvonnxparser PROPERTIES
   VERSION   ${ONNX2TRT_MAJOR}.${ONNX2TRT_MINOR}.${ONNX2TRT_PATCH}
   SOVERSION ${ONNX2TRT_MAJOR}
@@ -468,7 +443,7 @@ if (NOT MSVC )
 # --------------------------------
 add_library(nvonnxparser SHARED ${IMPORTER_SOURCES})
 target_include_directories(nvonnxparser PUBLIC ${ONNX_INCLUDE_DIRS} ${TENSORRT_INCLUDE_DIR} ${CUDNN_INCLUDE_DIR} ${CUDA_INCLUDE_DIRS} ${MSVC_COMPILER_DIR}/include)
-target_link_libraries(nvonnxparser PUBLIC onnx_proto nvonnxparser_plugin ${PROTOBUF_LIBRARY} ${CUDNN_LIBRARY} ${TENSORRT_LIBRARY})
+target_link_libraries(nvonnxparser PUBLIC onnx_proto ${PROTOBUF_LIBRARY} ${CUDNN_LIBRARY} ${TENSORRT_LIBRARY})
 set_target_properties(nvonnxparser PROPERTIES
   VERSION   ${ONNX2TRT_MAJOR}.${ONNX2TRT_MINOR}.${ONNX2TRT_PATCH}
   SOVERSION ${ONNX2TRT_MAJOR}
@@ -478,24 +453,8 @@ set_target_properties(nvonnxparser PROPERTIES
 
 add_library(nvonnxparser_static STATIC ${IMPORTER_SOURCES})
 target_include_directories(nvonnxparser_static PUBLIC ${ONNX_INCLUDE_DIRS} ${TENSORRT_INCLUDE_DIR} ${CUDNN_INCLUDE_DIR})
-target_link_libraries(nvonnxparser_static PUBLIC onnx_proto nvonnxparser_plugin ${PROTOBUF_LIBRARY} ${CUDNN_LIBRARY} ${TENSORRT_LIBRARY})
+target_link_libraries(nvonnxparser_static PUBLIC onnx_proto ${PROTOBUF_LIBRARY} ${CUDNN_LIBRARY} ${TENSORRT_LIBRARY})
 
-# --------------------------------
-# Runtime library
-# --------------------------------
-add_library(nvonnxparser_runtime SHARED ${RUNTIME_SOURCES})
-target_include_directories(nvonnxparser_runtime PUBLIC ${TENSORRT_INCLUDE_DIR} ${CUDNN_INCLUDE_DIR} ${CUDA_INCLUDE_DIRS})
-target_link_libraries(nvonnxparser_runtime PUBLIC nvonnxparser_plugin ${CUDNN_LIBRARY} ${TENSORRT_LIBRARY})
-set_target_properties(nvonnxparser_runtime PROPERTIES
-  VERSION   ${ONNX2TRT_MAJOR}.${ONNX2TRT_MINOR}.${ONNX2TRT_PATCH}
-  SOVERSION ${ONNX2TRT_MAJOR}
-  LINK_DEPENDS ${RUNTIME_LINKER_SCRIPT}
-  LINK_FLAGS "-Wl,--version-script=${RUNTIME_LINKER_SCRIPT}"
-)
-
-add_library(nvonnxparser_runtime_static STATIC ${RUNTIME_SOURCES})
-target_include_directories(nvonnxparser_runtime_static PUBLIC ${TENSORRT_INCLUDE_DIR} ${CUDNN_INCLUDE_DIR})
-target_link_libraries(nvonnxparser_runtime_static PUBLIC nvonnxparser_plugin ${CUDNN_LIBRARY} ${TENSORRT_LIBRARY})
 endif()
 
 # # # Disable to ensure compilation for ERIS, etc. Will enable one by one
@@ -533,13 +492,13 @@ endif()
 # #   set(OUTPUT      "${CMAKE_CURRENT_BINARY_DIR}/build/timestamp")
 
 # #   configure_file(${SETUP_PY_IN} ${SETUP_PY})
-  
+
 # #   add_custom_command(OUTPUT ${OUTPUT}
 # #     #COMMAND cd .. && ${PYTHON} ${SETUP_PY_IN} build_ext -I ${TENSORRT_INCLUDE_DIR}
 # #     COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && pwd && ${PYTHON} ${SETUP_PY_IN} build_ext --build-lib ${CMAKE_LIBRARY_OUTPUT_DIRECTORY} --include-dirs ${TENSORRT_INCLUDE_DIR} #--source-dir ${CMAKE_CURRENT_SOURCE_DIR}
 # #     )
-  
-# #   add_custom_target(target ALL DEPENDS ${OUTPUT} nvonnxparser nvonnxparser_runtime)
+
+# #   add_custom_target(target ALL DEPENDS ${OUTPUT} nvonnxparser)
 
 # #   #    install(CODE "execute_process(COMMAND ${PYTHON} ${SETUP_PY} install)")
 # # endif()
@@ -548,10 +507,10 @@ endif()
 # # Installation
 # # --------------------------------
 # #install(TARGETS onnx2trt
-#                nvonnxparser_static nvonnxparser_runtime_static
+#                nvonnxparser_static
 if (NOT MSVC )
-  install(TARGETS nvonnxparser        nvonnxparser_runtime
-    nvonnxparser_static nvonnxparser_runtime_static
+  install(TARGETS nvonnxparser
+    nvonnxparser_static
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
@@ -562,7 +521,7 @@ else()
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
   )
-endif()  
+endif()
 
 install(FILES ${HEADERS}
   DESTINATION include
