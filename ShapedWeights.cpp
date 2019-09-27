@@ -28,23 +28,6 @@
 
 namespace onnx2trt {
 
-bool convertINT64(void* weightValues, const size_t nbWeights, std::vector<int32_t>& converted_weights)
-{
-  int64_t * weights = static_cast<int64_t *>(weightValues);
-  for (size_t i = 0; i < nbWeights; i++)
-  {
-    if (weights[i] > INT32_MAX || weights[i] < INT32_MIN)
-    {
-      return false;
-    }
-    else
-    {
-      converted_weights[i] = static_cast<int32_t>(weights[i]);
-    }
-  }
-  return true;
-}
-
 size_t ShapedWeights::count() const {
     if (this->values == nullptr && this->shape.nbDims <= 0)
     {
@@ -78,41 +61,15 @@ ShapedWeights::operator bool() const {
   return (bool)this->values;
 }
 
-ShapedWeights::operator nvinfer1::Weights() const {
-  nvinfer1::Weights w{};
-
-  // If INT64 weights, check if all the values can be cast down to INT32.
-  if (this->type == ::ONNX_NAMESPACE::TensorProto::INT64)
-  {
-    std::cout << "WARNING: Your ONNX model has been generated with INT64 weights, "
-         << "while TensorRT does not natively support INT64. "
-         << "Attempting to cast down to INT32." << std::endl;
-    std::vector<int32_t> int32_weights;
-    int32_weights.resize(this->count());
-
-    if (!onnx2trt::convertINT64(this->values, this->count(), int32_weights))
-    {
-      std::cerr << "ERROR: Weights cannot be cast down to INT32." << std::endl;
-      // Return empty w on failure
-      return w;
-    }
-    else
-    {
-      void * int32_weights_ptr = static_cast<void *>(int32_weights.data());
-      std::memcpy(this->values, int32_weights_ptr, int32_weights.size() * sizeof(int32_t));
-      w.values = this->values;
-      std::cout << "Successfully casted down to INT32." << std::endl;
-    }
-  }
-  else
-  {
+ShapedWeights::operator nvinfer1::Weights() const
+{
+    nvinfer1::Weights w{};
     w.values = this->values;
-  }
-  bool supported_type = convert_dtype(this->type, &w.type);
-  (void)supported_type;
-  assert(supported_type);
-  w.count = this->count();
-  return w;
+    bool supported_type = convertDtype(this->type, &w.type);
+    (void)supported_type;
+    assert(supported_type);
+    w.count = this->count();
+    return w;
 }
 
 template<typename DType>
@@ -143,22 +100,22 @@ bool transposeWeights(ShapedWeights const& weights,
   // TODO: Need to generalize this transpose implementation
   assert(perm.order[0] == 1 && perm.order[1] == 0);
 
-  if (shape.nbDims == 2) 
+  if (shape.nbDims == 2)
   {
-    if (weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT) 
+    if (weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT)
     {
       transpose2DWeights<float>(weights, new_shape, result);
-    } 
-    else if (weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT16) 
+    }
+    else if (weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT16)
     {
       transpose2DWeights<uint16_t>(weights, new_shape, result);
-    } 
-    else 
+    }
+    else
     {
       return false;
     }
   }
-  else 
+  else
   {
     // TODO: Implement general transposes and multiple data types
     // Unsupported weights transpose

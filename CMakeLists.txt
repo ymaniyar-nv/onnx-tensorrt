@@ -32,6 +32,11 @@ macro(set_ifndef var val)
     endif()
 endmacro()
 
+function(message)
+    if (VERBOSE)
+        _message(${ARGN})
+    endif()
+endfunction()
 
 # Write the libs out to the top-level of the build directory.
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${TENSORRT_BUILD})

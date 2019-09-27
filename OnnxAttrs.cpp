@@ -87,14 +87,14 @@ template<> nvinfer1::Permutation OnnxAttrs::get<nvinfer1::Permutation>(const std
 template<> onnx2trt::ShapedWeights OnnxAttrs::get<onnx2trt::ShapedWeights>(const std::string& key) const {
   ::ONNX_NAMESPACE::TensorProto const& onnx_weights_tensor = this->at(key)->t();
   onnx2trt::ShapedWeights weights;
-  convert_onnx_weights(onnx_weights_tensor, &weights);
+  convertOnnxWeights(onnx_weights_tensor, &weights, mCtx);
   return weights;
 }
 
 template<> nvinfer1::DataType OnnxAttrs::get<nvinfer1::DataType>(const std::string& key) const {
     ::ONNX_NAMESPACE::TensorProto::DataType onnx_dtype = static_cast<::ONNX_NAMESPACE::TensorProto::DataType>(this->at(key)->i());
     nvinfer1::DataType dtype{};
-    if (!onnx2trt::convert_dtype(onnx_dtype, &dtype)) {
+    if (!onnx2trt::convertDtype(onnx_dtype, &dtype)) {
         dtype = static_cast<nvinfer1::DataType>(-1);
     }
     return dtype;
@@ -108,7 +108,7 @@ std::vector<nvinfer1::DataType> OnnxAttrs::get<std::vector<nvinfer1::DataType>>(
     for (auto onnx_dtype : onnx_dtypes)
     {
         nvinfer1::DataType dtype{};
-        if (!onnx2trt::convert_dtype(static_cast<int32_t>(onnx_dtype), &dtype))
+        if (!onnx2trt::convertDtype(static_cast<int32_t>(onnx_dtype), &dtype))
         {
             dtype = static_cast<nvinfer1::DataType>(-1);
         }

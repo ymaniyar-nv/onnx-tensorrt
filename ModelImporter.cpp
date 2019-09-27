@@ -22,8 +22,9 @@
 
 #include "ModelImporter.hpp"
 #include "toposort.hpp"
-#include "onnx_utils.hpp"
 #include "onnx2trt_utils.hpp"
+#include "onnx_utils.hpp"
+#include "OnnxAttrs.hpp"
 
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
@@ -84,8 +85,9 @@ Status parseGraph(IImporterContext* ctx, const ::ONNX_NAMESPACE::GraphProto& gra
     // Import initializers.
     for (const ::ONNX_NAMESPACE::TensorProto& initializer : graph.initializer())
     {
+        LOG_VERBOSE("Importing initializer: " << initializer.name());
         ShapedWeights weights;
-        ASSERT(convert_onnx_weights(initializer, &weights), ErrorCode::kUNSUPPORTED_NODE);
+        ASSERT(convertOnnxWeights(initializer, &weights, ctx), ErrorCode::kUNSUPPORTED_NODE);
         ctx->registerTensor(TensorOrWeights{std::move(weights)}, initializer.name());
     }
 
@@ -134,7 +136,7 @@ Status parseGraph(IImporterContext* ctx, const ::ONNX_NAMESPACE::GraphProto& gra
 
         if (deserializingINetwork)
         {
-            OnnxAttrs attrs(node);
+            OnnxAttrs attrs(node, ctx);
 
             // Tensor locations, dynamic ranges and layer precisions will be set after parsing the network
             std::vector<std::string> outputsLocation = attrs.get<std::vector<std::string>>("trt_outputs_loc", {});
@@ -174,9 +176,9 @@ Status importInput(ImporterContext* importer_ctx,
                    nvinfer1::ITensor** tensor) {
   auto const& onnx_tensor_type = input.type().tensor_type();
   nvinfer1::DataType trt_dtype;
-  ASSERT(convert_dtype(onnx_tensor_type.elem_type(), &trt_dtype),
+  ASSERT(convertDtype(onnx_tensor_type.elem_type(), &trt_dtype),
          ErrorCode::kUNSUPPORTED_NODE);
-  auto trt_dims = convert_dims(onnx_tensor_type.shape().dim());
+  auto trt_dims = convertOnnxDims(onnx_tensor_type.shape().dim());
   nvinfer1::ITensor* user_input = importer_ctx->getUserInput(input.name().c_str());
   if( user_input ) {
     ASSERT(user_input, ErrorCode::kINVALID_VALUE);
@@ -228,7 +230,7 @@ Status importInputs(ImporterContext* ctx,
             ShapedWeights weights;
             // We only support grabbing weight from CPU memory now
             ASSERT(weight_desc.memoryType == ONNXIFI_MEMORY_TYPE_CPU, ErrorCode::kINVALID_VALUE);
-            ASSERT(convert_weight_descriptor(weight_desc, &weights), ErrorCode::kUNSUPPORTED_NODE);
+            ASSERT(convertWeightDescriptor(weight_desc, &weights, ctx), ErrorCode::kUNSUPPORTED_NODE);
             tensor = weights;
         }
         else if (!initializers.count(input.name()))
@@ -385,7 +387,7 @@ ModelImporter::importModel(::ONNX_NAMESPACE::ModelProto const &model,
        {
            _importer_ctx.network()->markOutput(*output_tensor_ptr);
            nvinfer1::DataType output_trt_dtype;
-           ASSERT(convert_dtype(output.type().tensor_type().elem_type(), &output_trt_dtype), ErrorCode::kUNSUPPORTED_NODE);
+           ASSERT(convertDtype(output.type().tensor_type().elem_type(), &output_trt_dtype), ErrorCode::kUNSUPPORTED_NODE);
            // For INT32 data type, output type must match tensor type
            ASSERT(output_tensor_ptr->getType() != nvinfer1::DataType::kINT32 ||
            output_trt_dtype == nvinfer1::DataType::kINT32,

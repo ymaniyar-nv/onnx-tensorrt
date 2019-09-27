@@ -46,6 +46,4 @@ bool transposeWeights(ShapedWeights const& weights,
                       nvinfer1::Permutation const& perm,
                       ShapedWeights* result);
 
-bool convertINT64(void * weightValues, const size_t nbWeights, std::vector<int32_t>& converted_weights);
-
 } // namespace onnx2trt

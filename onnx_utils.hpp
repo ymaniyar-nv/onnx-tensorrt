@@ -35,6 +35,20 @@ using std::endl;
 
 namespace {
 
+template<typename OnnxDims>
+inline nvinfer1::Dims convertOnnxDims(OnnxDims const& onnx_dims) {
+    std::vector<int> onnx_dims_vector;
+    for (const auto& onnx_dim : onnx_dims)
+    {
+        onnx_dims_vector.push_back((onnx_dim.dim_param() == "" ? onnx_dim.dim_value() : -1));
+    }
+    nvinfer1::Dims trt_dims;
+    trt_dims.nbDims = onnx_dims_vector.size();
+    assert(trt_dims.nbDims <= nvinfer1::Dims::MAX_DIMS);
+    std::copy(onnx_dims_vector.begin(), onnx_dims_vector.end(), trt_dims.d);
+    return trt_dims;
+}
+
 // Removes raw data from the text representation of an ONNX model
 inline void remove_raw_data_strings(std::string& s) {
   std::string::size_type beg = 0;

@@ -27,13 +27,16 @@
 #include <vector>
 #include <unordered_map>
 
+#include "ImporterContext.hpp"
+
 class OnnxAttrs {
   template<typename T>
   using string_map = std::unordered_map<std::string, T>;
   typedef string_map<::ONNX_NAMESPACE::AttributeProto const*> AttrMap;
   AttrMap _attrs;
+  onnx2trt::IImporterContext* mCtx;
 public:
-  explicit OnnxAttrs(::ONNX_NAMESPACE::NodeProto const& onnx_node) {
+  explicit OnnxAttrs(::ONNX_NAMESPACE::NodeProto const& onnx_node, onnx2trt::IImporterContext* ctx) : mCtx{ctx} {
     for( auto const& attr : onnx_node.attribute() ) {
       _attrs.insert({attr.name(), &attr});
     }
