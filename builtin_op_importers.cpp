@@ -990,6 +990,45 @@ DEFINE_BUILTIN_OP_IMPORTER(Greater)
     return elementwiseHelper(ctx, node, inputs, nvinfer1::ElementWiseOperation::kGREATER);
 }
 
+// singlePassShape is the shape of the output from a single pass.
+nvinfer1::ITensor* concatenateRNNOutputs(IImporterContext* ctx, nvinfer1::ILoop* loop, nvinfer1::ITensor* singlePassShape, nvinfer1::ITensor* sequenceLength, nvinfer1::ITensor* concatenatedOutput, int numDirections)
+{
+    nvinfer1::ITensor* yOutput{nullptr};
+    if (numDirections == 2)
+    {
+        nvinfer1::ITensor* forwardStart = addConstant(ctx, std::vector<int32_t>{0, 0, 0}, ::ONNX_NAMESPACE::TensorProto::INT32, nvinfer1::Dims{1, 3})->getOutput(0);
+        nvinfer1::ITensor* reverseStart = addConstant(ctx, std::vector<int32_t>{1, 0, 0}, ::ONNX_NAMESPACE::TensorProto::INT32, nvinfer1::Dims{1, 3})->getOutput(0);
+
+        LOG_VERBOSE("Concatenated output shape: " << concatenatedOutput->getDimensions());
+        nvinfer1::ISliceLayer* HtForwardLayer = ctx->network()->addSlice(*concatenatedOutput, nvinfer1::Dims3{0, 0, 0}, nvinfer1::Dims3{0, 0, 0}, nvinfer1::Dims3{1, 1, 1});
+        LOG_VERBOSE("Forward pass shape: " << HtForwardLayer->getOutput(0)->getDimensions());
+        HtForwardLayer->setInput(1, *forwardStart);
+        HtForwardLayer->setInput(2, *singlePassShape);
+
+        nvinfer1::ISliceLayer* HtBackwardLayer = ctx->network()->addSlice(*concatenatedOutput, nvinfer1::Dims3{0, 0, 0}, nvinfer1::Dims3{0, 0, 0}, nvinfer1::Dims3{1, 1, 1});
+        LOG_VERBOSE("Reverse pass shape: " << HtBackwardLayer->getOutput(0)->getDimensions());
+        HtBackwardLayer->setInput(1, *reverseStart);
+        HtBackwardLayer->setInput(2, *singlePassShape);
+
+        nvinfer1::ILoopOutputLayer* forwardOutput = loop->addLoopOutput(*HtForwardLayer->getOutput(0), nvinfer1::LoopOutput::kCONCATENATE, 0);
+        forwardOutput->setInput(1, *sequenceLength);
+        nvinfer1::ILoopOutputLayer* reverseOutput = loop->addLoopOutput(*HtBackwardLayer->getOutput(0), nvinfer1::LoopOutput::kREVERSE, 0);
+        reverseOutput->setInput(1, *sequenceLength);
+
+        std::array<nvinfer1::ITensor*, 2> passes{{forwardOutput->getOutput(0), reverseOutput->getOutput(0)}};
+        nvinfer1::IConcatenationLayer* concat = ctx->network()->addConcatenation(passes.data(), passes.size());
+        concat->setAxis(1);
+        yOutput = concat->getOutput(0);
+    }
+    else
+    {
+        nvinfer1::ILoopOutputLayer* scanOut = loop->addLoopOutput(*concatenatedOutput, nvinfer1::LoopOutput::kCONCATENATE, 0);
+        scanOut->setInput(1, *sequenceLength);
+        yOutput = scanOut->getOutput(0);
+    }
+    return yOutput;
+}
+
 DEFINE_BUILTIN_OP_IMPORTER(GRU)
 {
     using nvinfer1::Dims;
@@ -1289,9 +1328,11 @@ DEFINE_BUILTIN_OP_IMPORTER(GRU)
 
     std::vector<TensorOrWeights> outputs{};
     // Y = concatenation of all H(t) for each element of the sequence
-    nvinfer1::ILoopOutputLayer* scanOut = loop->addLoopOutput(*Ht, nvinfer1::LoopOutput::kCONCATENATE, 0);
-    scanOut->setInput(1, *getAxisLength(ctx, input, 0));
-    outputs.emplace_back(scanOut->getOutput(0));
+    // Shape of (1, batchSize, hiddenSize)
+    nvinfer1::ITensor* singlePassShape = ctx->network()->addElementWise(*gateOutputShape,
+        *addConstant(ctx, std::vector<int>{numDirections, 1, 1}, ::ONNX_NAMESPACE::TensorProto_DataType_INT32, nvinfer1::Dims{1, 3})->getOutput(0),
+        nvinfer1::ElementWiseOperation::kDIV)->getOutput(0);
+    outputs.emplace_back(concatenateRNNOutputs(ctx, loop, singlePassShape, getAxisLength(ctx, input, 0), Ht, numDirections));
     // Yh = last value of H(t)
     outputs.emplace_back(loop->addLoopOutput(*Ht1->getOutput(0), nvinfer1::LoopOutput::kLAST_VALUE)->getOutput(0));
     return {{outputs}};
@@ -1625,9 +1666,11 @@ DEFINE_BUILTIN_OP_IMPORTER(LSTM)
 
     std::vector<TensorOrWeights> outputs{};
     // Y = concatenation of all H(t) for each element of the sequence
-    nvinfer1::ILoopOutputLayer* scanOut = loop->addLoopOutput(*Ht, nvinfer1::LoopOutput::kCONCATENATE, 0);
-    scanOut->setInput(1, *getAxisLength(ctx, input, 0));
-    outputs.emplace_back(scanOut->getOutput(0));
+    // Shape of (1, batchSize, hiddenSize)
+    nvinfer1::ITensor* singlePassShape = ctx->network()->addElementWise(*gateOutputShape,
+        *addConstant(ctx, std::vector<int>{numDirections, 1, 1}, ::ONNX_NAMESPACE::TensorProto_DataType_INT32, nvinfer1::Dims{1, 3})->getOutput(0),
+        nvinfer1::ElementWiseOperation::kDIV)->getOutput(0);
+    outputs.emplace_back(concatenateRNNOutputs(ctx, loop, singlePassShape, getAxisLength(ctx, input, 0), Ht, numDirections));
     // Yh = last value of H(t)
     outputs.emplace_back(loop->addLoopOutput(*hiddenState->getOutput(0), nvinfer1::LoopOutput::kLAST_VALUE)->getOutput(0));
     // Yc = last value of C(t)
