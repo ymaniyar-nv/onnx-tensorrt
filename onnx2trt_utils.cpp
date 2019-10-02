@@ -85,31 +85,57 @@ NodeImportResult argMinMaxHelper(IImporterContext* ctx, const ::ONNX_NAMESPACE::
     }
 }
 
-void broadcastTensors(IImporterContext* ctx, nvinfer1::ITensor*& t1, nvinfer1::ITensor*& t2)
+void broadcastTensors(IImporterContext* ctx, nvinfer1::ITensor*& t1, const int nbDims)
 {
-    if (t1->getDimensions().nbDims == t2->getDimensions().nbDims)
+
+    if (t1->getDimensions().nbDims >= nbDims)
     {
         return;
     }
-    nvinfer1::ITensor* largeTensor;
-    nvinfer1::ITensor* smallTensor;
-    if (t1->getDimensions().nbDims > t2->getDimensions().nbDims)
+
+    // Perform broadcast by concatenating the number of leading dimensions to the shape of the smaller tensor
+    int numLeadingDims =  nbDims - t1->getDimensions().nbDims;
+    nvinfer1::Dims leadingDims = makeDims(numLeadingDims, 1);
+    auto* leadingShape = &makeShapeTensor(ctx, leadingDims);
+
+    if (t1->getDimensions().nbDims > 0)
     {
-        largeTensor = t1;
-        smallTensor = t2;
+        auto* shape = ctx->network()->addShape(*t1)->getOutput(0);
+        std::vector<nvinfer1::ITensor*> tensors{leadingShape, shape};
+
+        auto* concatLayer = ctx->network()->addConcatenation(tensors.data(), tensors.size());
+        auto* reshapeLayer = ctx->network()->addShuffle(*t1);
+
+        reshapeLayer->setInput(1, *concatLayer->getOutput(0));
+        t1 = reshapeLayer->getOutput(0);
+    }
+    // Handle scalar inputs by reshaping to leadingDims
+    else
+    {
+        auto* reshapeLayer = ctx->network()->addShuffle(*t1);
+        reshapeLayer->setReshapeDimensions(leadingDims);
+        t1 = reshapeLayer->getOutput(0);
+    }
+}
+
+void broadcastTensors(IImporterContext* ctx, nvinfer1::ITensor*& t1, nvinfer1::ITensor*& t2)
+{
+    const int t1Dims = t1->getDimensions().nbDims;
+    const int t2Dims = t2->getDimensions().nbDims;
+
+    if (t1Dims == t2Dims)
+    {
+        return;
+    }
+
+    if (t1Dims > t2Dims)
+    {
+        broadcastTensors(ctx, t2, t1Dims);
     }
     else
     {
-        largeTensor = t2;
-        smallTensor = t1;
+        broadcastTensors(ctx, t1, t2Dims);
     }
-
-    nvinfer1::Dims largeDims = largeTensor->getDimensions();
-    nvinfer1::Dims smallDims = smallTensor->getDimensions();
-    nvinfer1::Dims newDims = expand_dims(smallDims, largeDims.nbDims);
-    LOG_VERBOSE("Broadcasting " << smallDims << " across " << largeDims << ". New shape: " << newDims);
-
-    t1 == smallTensor ? t1 = reshapeTensor(ctx, *t1, newDims) : t2 = reshapeTensor(ctx, *t2, newDims);
 }
 
 nvinfer1::ITensor* constantOfShape(IImporterContext* ctx, nvinfer1::ITensor* constant, nvinfer1::ITensor* shape)
@@ -347,38 +373,33 @@ NodeImportResult elementwiseHelper(IImporterContext* ctx, ::ONNX_NAMESPACE::Node
     std::vector<TensorOrWeights>& inputs, nvinfer1::ElementWiseOperation binary_op)
 {
     ASSERT(!inputs.empty(), ErrorCode::kINVALID_NODE);
-
-    std::vector<nvinfer1::ITensor*> input_tensors;
-    int ndim_max = -1;
-
-    // Find maximum number of input dimensions
+    std::vector<nvinfer1::ITensor*> inputTensors;
+    int maxNbDims = -1;
     for (auto input : inputs)
     {
-        ndim_max = std::max(ndim_max, input.shape().nbDims);
+        maxNbDims = std::max(maxNbDims, input.shape().nbDims);
     }
 
-    // Convert inputs to tensors and expand their dimensions to ndim_max if necessary
-    for (auto input : inputs)
+    for (auto input: inputs)
     {
-        nvinfer1::ITensor* tensor_ptr = &convertToTensor(input, ctx);
-        if (tensor_ptr->getDimensions().nbDims != ndim_max)
-        {
-            nvinfer1::Dims new_dims = expand_dims(tensor_ptr->getDimensions(), ndim_max);
-            tensor_ptr = reshapeTensor(ctx, *tensor_ptr, new_dims);
-        }
-        ASSERT(tensor_ptr->getDimensions().nbDims == ndim_max, ErrorCode::kUNSUPPORTED_NODE);
-        input_tensors.push_back(tensor_ptr);
+        auto* tensor_ptr = &convertToTensor(input, ctx);
+        // Broadcast all input tensors to size of maxNbDims
+        broadcastTensors(ctx, tensor_ptr, maxNbDims);
+        ASSERT(tensor_ptr->getDimensions().nbDims == maxNbDims && "Failed to broadcast tensors elementwise!",
+               ErrorCode::kUNSUPPORTED_NODE);
+        inputTensors.push_back(tensor_ptr);
     }
+
     // Use the first tensor input as the base for the elementwise operation
-    nvinfer1::ITensor* combined = input_tensors.at(0);
-    if (input_tensors.size() == 1)
+    nvinfer1::ITensor* combined = inputTensors.at(0);
+    if (inputTensors.size() == 1)
     {
         // Note: Single input must be wrapped in identity to avoid messing up network outputs
         return {{identity(ctx, combined)}};
     }
-    for (size_t i = 1; i < input_tensors.size(); ++i)
+    for (size_t i = 1; i < inputTensors.size(); ++i)
     {
-        nvinfer1::ITensor* tensor = input_tensors.at(i);
+        nvinfer1::ITensor* tensor = inputTensors.at(i);
         ASSERT(tensor->getDimensions().nbDims == combined->getDimensions().nbDims, ErrorCode::kUNSUPPORTED_NODE);
         auto* layer = ctx->network()->addElementWise(*combined, *tensor, binary_op);
         ASSERT(layer, ErrorCode::kUNSUPPORTED_NODE);
@@ -389,14 +410,51 @@ NodeImportResult elementwiseHelper(IImporterContext* ctx, ::ONNX_NAMESPACE::Node
 
 nvinfer1::ITensor* flattenTensor(IImporterContext* ctx, nvinfer1::ITensor& tensor, int axis)
 {
-    nvinfer1::Dims shape = tensor.getDimensions();
-    nvinfer1::Dims new_shape = shape;
-    for (int i = axis + 1; i < shape.nbDims; ++i)
+    nvinfer1::Dims dims = tensor.getDimensions();
+    auto* shape = ctx->network()->addShape(tensor)->getOutput(0);
+
+    // Gather "start indicies" in a loop and multiply them together to get the "start shape"
+    // Do the same for the "axis indices" and then concat them together.
+
+    std::vector<int> startIndex {0};
+    nvinfer1::Dims gatherIndicesShape{1, static_cast<int>(startIndex.size())};
+
+    auto* startLayer = ctx->network()->addGather(*shape, *addConstant(ctx, startIndex, ::ONNX_NAMESPACE::TensorProto::INT32, gatherIndicesShape)->getOutput(0), 0);
+    auto* startTensor = startLayer->getOutput(0);
+
+    // Handle flatten on axis 0 case by incrementing axis.
+    if (axis == 0)
     {
-        new_shape.d[axis] *= shape.d[i];
-        new_shape.d[i] = 1;
+        axis++;
     }
-    return reshapeTensor(ctx, tensor, new_shape);
+
+    std::vector<int> axisIndex {axis};
+    auto* axisLayer = ctx->network()->addGather(*shape, *addConstant(ctx, axisIndex, ::ONNX_NAMESPACE::TensorProto::INT32, gatherIndicesShape)->getOutput(0), 0);
+    auto* axisTensor = axisLayer->getOutput(0);
+
+    for (int i = 1; i < axis; i++)
+    {
+        startIndex = {i};
+        auto* beforeLayer = ctx->network()->addGather(*shape, *addConstant(ctx, startIndex, ::ONNX_NAMESPACE::TensorProto::INT32, gatherIndicesShape)->getOutput(0), 0);
+        auto* before = beforeLayer->getOutput(0);
+        startTensor = ctx->network()->addElementWise(*startTensor, *before, nvinfer1::ElementWiseOperation::kPROD)->getOutput(0);
+    }
+
+    for (int i = axis + 1; i < dims.nbDims; i++)
+    {
+        axisIndex = {i};
+        auto* afterLayer = ctx->network()->addGather(*shape, *addConstant(ctx, axisIndex, ::ONNX_NAMESPACE::TensorProto::INT32, gatherIndicesShape)->getOutput(0), 0);
+        auto* after = afterLayer->getOutput(0);
+        axisTensor = ctx->network()->addElementWise(*axisTensor, *after, nvinfer1::ElementWiseOperation::kPROD)->getOutput(0);
+    }
+
+    std::vector<nvinfer1::ITensor*> tensors{startTensor, axisTensor};
+
+    auto* concatLayer = ctx->network()->addConcatenation(tensors.data(), tensors.size());
+    auto* reshapeLayer = ctx->network()->addShuffle(tensor);
+    reshapeLayer->setInput(1, *concatLayer->getOutput(0));
+
+    return reshapeLayer->getOutput(0);
 }
 
 // Helper function to generate padding values for convTranspose

@@ -105,34 +105,9 @@ bool registerBuiltinOpImporter(std::string op, NodeImporter const& importer)
     return inserted;
 }
 
-DEFINE_BUILTIN_OP_IMPORTER(Sin)
+DEFINE_BUILTIN_OP_IMPORTER(Abs)
 {
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kSIN);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Cos)
-{
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kCOS);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Tan)
-{
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kTAN);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Sinh)
-{
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kSINH);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Cosh)
-{
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kCOSH);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Asin)
-{
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kASIN);
+    return apply_unary_function(ctx, inputs.at(0), nvinfer1::UnaryOperation::kABS);
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Acos)
@@ -140,9 +115,14 @@ DEFINE_BUILTIN_OP_IMPORTER(Acos)
     return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kACOS);
 }
 
-DEFINE_BUILTIN_OP_IMPORTER(Atan)
+DEFINE_BUILTIN_OP_IMPORTER(Acosh)
 {
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kATAN);
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kACOSH);
+}
+
+DEFINE_BUILTIN_OP_IMPORTER(Asin)
+{
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kASIN);
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Asinh)
@@ -150,34 +130,14 @@ DEFINE_BUILTIN_OP_IMPORTER(Asinh)
     return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kASINH);
 }
 
-DEFINE_BUILTIN_OP_IMPORTER(Acosh)
+DEFINE_BUILTIN_OP_IMPORTER(Atan)
 {
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kACOSH);
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kATAN);
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Atanh)
 {
     return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kATANH);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Ceil)
-{
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kCEIL);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Floor)
-{
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kFLOOR);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Erf)
-{
-    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kERF);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Abs)
-{
-    return apply_unary_function(ctx, inputs.at(0), nvinfer1::UnaryOperation::kABS);
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Add)
@@ -228,7 +188,6 @@ DEFINE_BUILTIN_OP_IMPORTER(AveragePool)
     ASSERT(dims.nbDims >= 4, ErrorCode::kUNSUPPORTED_NODE);
 
     int nbSpatialDims = dims.nbDims - 2;
-    ASSERT(nbSpatialDims == 2 || nbSpatialDims == 3, ErrorCode::kUNSUPPORTED_NODE);
     nvinfer1::Dims kernel_size = makeDims(nbSpatialDims, 1);
     nvinfer1::Dims strides = makeDims(nbSpatialDims, 1);
     nvinfer1::Dims beg_padding = makeDims(nbSpatialDims, 0);
@@ -247,6 +206,7 @@ DEFINE_BUILTIN_OP_IMPORTER(AveragePool)
 
     pooling_layer->setPrePadding(beg_padding);
     pooling_layer->setPostPadding(end_padding);
+
     // Note: Average pooling requires special care with asymmetric padding
     //       because the need to exclude padding pixels from the average
     //       means we can't just use a pre-padding layer.
@@ -313,7 +273,8 @@ DEFINE_BUILTIN_OP_IMPORTER(BatchNormalization)
         dims = tensor_ptr->getDimensions();
     }
 
-    int nchan = dims.d[1];
+    // Number of channels is equal to the length of scale_weights.
+    int nchan = scale_weights.shape.d[0];
     nvinfer1::Dims weights_shape{1, {nchan}};
     ASSERT(scale_weights.shape == weights_shape, ErrorCode::kINVALID_NODE);
     ASSERT(bias_weights.shape == weights_shape, ErrorCode::kINVALID_NODE);
@@ -367,10 +328,15 @@ DEFINE_BUILTIN_OP_IMPORTER(Cast)
     RETURN_FIRST_OUTPUT(layer);
 }
 
+DEFINE_BUILTIN_OP_IMPORTER(Ceil)
+{
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kCEIL);
+}
+
 DEFINE_BUILTIN_OP_IMPORTER(Clip)
 {
     OnnxAttrs attrs(node, ctx);
-    // beta is the upper bound.
+    // beta is the upper bound
     float alpha = attrs.get("min", std::numeric_limits<float>::lowest());
     float beta = attrs.get("max", std::numeric_limits<float>::max());
     return activationHelper(ctx, node, inputs, nvinfer1::ActivationType::kCLIP, &alpha, &beta);
@@ -655,6 +621,16 @@ DEFINE_BUILTIN_OP_IMPORTER(ConvTranspose)
     return {{tensor_ptr}};
 }
 
+DEFINE_BUILTIN_OP_IMPORTER(Cos)
+{
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kCOS);
+}
+
+DEFINE_BUILTIN_OP_IMPORTER(Cosh)
+{
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kCOSH);
+}
+
 DEFINE_BUILTIN_OP_IMPORTER(DepthToSpace)
 {
     // The Tensor has to be of shape NCHW
@@ -739,6 +715,11 @@ DEFINE_BUILTIN_OP_IMPORTER(Equal)
     return elementwiseHelper(ctx, node, inputs, nvinfer1::ElementWiseOperation::kEQUAL);
 }
 
+DEFINE_BUILTIN_OP_IMPORTER(Erf)
+{
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kERF);
+}
+
 DEFINE_BUILTIN_OP_IMPORTER(Exp)
 {
     return apply_unary_function(ctx, inputs.at(0), nvinfer1::UnaryOperation::kEXP);
@@ -810,23 +791,22 @@ DEFINE_BUILTIN_OP_IMPORTER(Expand)
 DEFINE_BUILTIN_OP_IMPORTER(Flatten)
 {
     OnnxAttrs attrs(node, ctx);
-    int axis = attrs.get("axis", 1);
-    nvinfer1::Dims dims = inputs.at(0).shape();
     nvinfer1::ITensor* tensor_ptr = &convertToTensor(inputs.at(0), ctx);
-    int dim0 = 1;
-    int dim1 = 1;
-    for (int i = 0; i < axis; i++)
+    int nbDims = tensor_ptr->getDimensions().nbDims;
+    int axis = attrs.get("axis", 1);
+    TRT_CHECK(convertAxis(axis, nbDims));
+
+    if (nbDims > 2)
     {
-        dim0 *= dims.d[i];
+        tensor_ptr = flattenTensor(ctx, *tensor_ptr, axis);
+        ASSERT(tensor_ptr, ErrorCode::kUNSUPPORTED_NODE);
     }
-    for (int i = axis; i < dims.nbDims; i++)
-    {
-        dim1 *= dims.d[i];
-    }
-    nvinfer1::Dims new_shape{2, {dim0, dim1}};
-    tensor_ptr = reshapeTensor(ctx, *tensor_ptr, new_shape);
-    ASSERT(tensor_ptr, ErrorCode::kUNSUPPORTED_NODE);
     return {{tensor_ptr}};
+}
+
+DEFINE_BUILTIN_OP_IMPORTER(Floor)
+{
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kFLOOR);
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Gather)
@@ -1432,6 +1412,83 @@ DEFINE_BUILTIN_OP_IMPORTER(LogSoftmax)
     }
 }
 
+DEFINE_BUILTIN_OP_IMPORTER(Loop)
+{
+    constexpr int NB_NON_STATE_INPUTS = 2; // First 2 inputs are trip count and condition respectively.
+    constexpr int NB_DISCARDED_OUTPUTS = 1; // First output is the updated value of the condition, and is ignored by the outer loop node.
+    constexpr int MAX_SCAN_OUTPUT_LENGTH = 1024; // Maximum length for scan outputs if trip count is not set.
+    ASSERT(inputs.size() >= 2, ErrorCode::kINVALID_NODE);
+    OnnxAttrs attrs(node, ctx);
+    const int nbInputs = node.input().size();
+    // The number of state variables on the input and output is the same.
+    const int nbStateVars = nbInputs - NB_NON_STATE_INPUTS;
+
+    const ::ONNX_NAMESPACE::GraphProto& body = attrs.get<::ONNX_NAMESPACE::GraphProto>("body");
+
+    auto loop = ctx->network()->addLoop();
+
+    // Trip count and condition are optional inputs.
+    nvinfer1::ITensor* tripLimit{nullptr};
+    if (inputs[0])
+    {
+        tripLimit = convertToScalar(ctx, &convertToTensor(inputs[0], ctx));
+        ASSERT(tripLimit, ErrorCode::kINVALID_NODE);
+        loop->addTripLimit(*tripLimit, nvinfer1::TripLimit::kCOUNT);
+    }
+    if (inputs[1])
+    {
+        nvinfer1::ITensor* cond = convertToScalar(ctx, &convertToTensor(inputs[1], ctx));
+        ASSERT(cond, ErrorCode::kINVALID_NODE);
+        loop->addTripLimit(*cond, nvinfer1::TripLimit::kWHILE);
+    }
+    // Add initial state inputs using recurrent layers.
+    std::vector<nvinfer1::IRecurrenceLayer*> stateVars{};
+    for (size_t i = 2; i < inputs.size(); ++i)
+    {
+        stateVars.emplace_back(loop->addRecurrence(convertToTensor(inputs[i], ctx)));
+        ctx->registerTensor(TensorOrWeights{stateVars.back()->getOutput(0)}, body.input(i).name());
+    }
+
+    // Loop body
+    TRT_CHECK(onnx2trt::parseGraph(ctx, body));
+
+    // Set final values of state variables.
+    std::vector<TensorOrWeights> nodeOutputs{};
+    for (int i = 0; i < nbStateVars; ++i)
+    {
+        // The first output of the body graph is the updated condition, which is ignored by the Loop node.
+        const int index = i + NB_DISCARDED_OUTPUTS;
+        const auto& bodyOutputName = body.output(index).name();
+        auto& stateOutput = convertToTensor(ctx->tensors().at(bodyOutputName), ctx);
+        LOG_VERBOSE("For state variable output: " << bodyOutputName << ", found matching tensor: " << stateOutput.getName() << ", with shape: " << stateOutput.getDimensions());
+        stateVars.at(i)->setInput(1, stateOutput);
+        // Each state variable is also a loop output
+        nodeOutputs.emplace_back(loop->addLoopOutput(*stateVars.at(i)->getOutput(0), nvinfer1::LoopOutput::kLAST_VALUE)->getOutput(0));
+    }
+    // Finally, set up scan outputs.
+    for (int i = nbStateVars + NB_DISCARDED_OUTPUTS; i < nbInputs; ++i)
+    {
+        const auto& bodyOutputName = body.output(i).name();
+        auto& scanOutput = convertToTensor(ctx->tensors().at(bodyOutputName), ctx);
+        LOG_VERBOSE("For scan output: " << bodyOutputName << ", found matching tensor: " << scanOutput.getName()
+            << ", with shape: " << scanOutput.getDimensions());
+        nvinfer1::ILoopOutputLayer* trtScanOut = loop->addLoopOutput(scanOutput, nvinfer1::LoopOutput::kCONCATENATE, 0);
+        // If trip limit is set, we can set the loop output to the tripLimit, otherwise, set to some dummy constant value.
+        // In the latter case, the scan outputs must not be used in the rest of the model.
+        if (tripLimit)
+        {
+            trtScanOut->setInput(1, *tripLimit);
+        }
+        else
+        {
+            trtScanOut->setInput(1, *addConstantScalar(ctx, MAX_SCAN_OUTPUT_LENGTH, ::ONNX_NAMESPACE::TensorProto_DataType_INT32)->getOutput(0));
+        }
+        nodeOutputs.emplace_back(trtScanOut->getOutput(0));
+    }
+
+    return {nodeOutputs};
+}
+
 DEFINE_BUILTIN_OP_IMPORTER(LRN)
 {
     nvinfer1::ITensor& tensor = convertToTensor(inputs.at(0), ctx);
@@ -1840,6 +1897,14 @@ DEFINE_BUILTIN_OP_IMPORTER(Pad)
     RETURN_FIRST_OUTPUT(ctx->network()->addPadding(tensor, beg_padding, end_padding));
 }
 
+DEFINE_BUILTIN_OP_IMPORTER(ParametricSoftplus)
+{
+    OnnxAttrs attrs(node, ctx);
+    float alpha = attrs.get<float>("alpha");
+    float beta = attrs.get<float>("beta");
+    return activationHelper(ctx, node, inputs, nvinfer1::ActivationType::kSOFTPLUS, &alpha, &beta);
+}
+
 DEFINE_BUILTIN_OP_IMPORTER(Pow)
 {
     return elementwiseHelper(ctx, node, inputs, nvinfer1::ElementWiseOperation::kPOW);
@@ -1848,43 +1913,12 @@ DEFINE_BUILTIN_OP_IMPORTER(Pow)
 DEFINE_BUILTIN_OP_IMPORTER(PRelu)
 {
     ASSERT(inputs.size() == 2, ErrorCode::kINVALID_NODE);
-    nvinfer1::ITensor& input = convertToTensor(inputs.at(0), ctx);
-    const auto& shape1 = inputs.at(0).shape();
-    nvinfer1::ITensor* slopes{};
-    if (inputs.at(1).is_tensor())
-    {
-        if (inputs.at(1).shape().nbDims < shape1.nbDims)
-        {
-            nvinfer1::IShuffleLayer* reshapeLayer = ctx->network()->addShuffle(inputs.at(1).tensor());
-            ASSERT(reshapeLayer, ErrorCode::kUNSUPPORTED_NODE);
-            reshapeLayer->setReshapeDimensions(expand_dims(inputs.at(1).shape(), shape1.nbDims));
-            slopes = reshapeLayer->getOutput(0);
-        }
-        else
-        {
-            slopes = &convertToTensor(inputs.at(1), ctx);
-        }
-        const auto& shape2 = slopes->getDimensions();
-        ASSERT(shape1.nbDims == shape2.nbDims, ErrorCode::kUNSUPPORTED_NODE);
-        for (int i = 0; i < shape1.nbDims; ++i)
-        {
-            ASSERT(shape1.d[i] == shape2.d[i] || shape2.d[i] == 1, ErrorCode::kUNSUPPORTED_NODE);
-        }
-    }
-    else
-    {
-        auto weights = inputs.at(1).weights();
-        if (inputs.at(1).shape().nbDims < shape1.nbDims)
-        {
-            weights.shape = expand_dims(weights.shape, shape1.nbDims);
-        }
-        auto constantLayer = ctx->network()->addConstant(weights.shape, weights);
-        ASSERT(constantLayer, ErrorCode::kUNSUPPORTED_NODE);
-        slopes = constantLayer->getOutput(0);
-    }
-    ASSERT(input.getType() != nvinfer1::DataType::kINT32, ErrorCode::kUNSUPPORTED_NODE);
+    nvinfer1::ITensor* input = &convertToTensor(inputs.at(0), ctx);
+    nvinfer1::ITensor* slopes = &convertToTensor(inputs.at(1), ctx);
+    ASSERT(input->getType() != nvinfer1::DataType::kINT32, ErrorCode::kUNSUPPORTED_NODE);
     ASSERT(slopes->getType() != nvinfer1::DataType::kINT32, ErrorCode::kUNSUPPORTED_NODE);
-    RETURN_FIRST_OUTPUT(ctx->network()->addParametricReLU(input, *slopes));
+    broadcastTensors(ctx, input, slopes);
+    RETURN_FIRST_OUTPUT(ctx->network()->addParametricReLU(*input, *slopes));
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Reciprocal)
@@ -1969,6 +2003,51 @@ DEFINE_BUILTIN_OP_IMPORTER(Relu)
     return activationHelper(ctx, node, inputs, nvinfer1::ActivationType::kRELU);
 }
 
+DEFINE_BUILTIN_OP_IMPORTER(Resize)
+{
+    nvinfer1::ITensor& input = convertToTensor(inputs.at(0), ctx);
+    int input_dims = input.getDimensions().nbDims;
+    ASSERT(input_dims > 0, ErrorCode::kUNSUPPORTED_NODE);
+
+    // Add resize layer
+    nvinfer1::IResizeLayer* layer = ctx->network()->addResize(input);
+
+    // Retrive and validate scale factors.
+    // Scale factors include batch dimensions as well.
+    ASSERT(inputs.size() == 2, ErrorCode::kINVALID_NODE);
+    auto scales = inputs.at(1);
+    // Support for scales as weights
+    ASSERT(scales.is_weights(), ErrorCode::kUNSUPPORTED_NODE);
+    ShapedWeights scales_weights = scales.weights();
+    ASSERT(scales_weights.shape.nbDims == 1, ErrorCode::kUNSUPPORTED_NODE);
+    ASSERT(scales_weights.count() == static_cast<size_t>(input_dims), ErrorCode::kUNSUPPORTED_NODE);
+    ASSERT(scales_weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT, ErrorCode::kINVALID_NODE);
+    // Get floating point scale factors.
+    float const* scales_ptr = static_cast<float const*>(scales_weights.values);
+    layer->setScales(scales_ptr, input_dims);
+
+    // Set resize mode
+    OnnxAttrs attrs(node, ctx);
+    auto mode = attrs.get<std::string>("mode", "nearest");
+    ASSERT(mode == "nearest" || mode == "linear", ErrorCode::kUNSUPPORTED_NODE);
+    // Set default resize mode. Nearest resize support N-D (where 0 < N <= 8) resize.
+    nvinfer1::ResizeMode resizeMode = nvinfer1::ResizeMode::kNEAREST;
+    if (mode == "linear")
+    {
+        // Linear resize support 1-D, 2-D and 3D resize.
+        ASSERT((input_dims >= 1) && (input_dims <= 3), ErrorCode::kUNSUPPORTED_NODE);
+        resizeMode = nvinfer1::ResizeMode::kLINEAR;
+    }
+    layer->setResizeMode(resizeMode);
+
+    // Set other attributes. ONNX spec does not have this attribute yet.
+    // Default: False. Set it any way.
+    layer->setAlignCorners(false);
+
+    // Return layer output
+    RETURN_FIRST_OUTPUT(layer);
+}
+
 DEFINE_BUILTIN_OP_IMPORTER(Reshape)
 {
     nvinfer1::ITensor& input = convertToTensor(inputs.at(0), ctx);
@@ -1986,83 +2065,6 @@ DEFINE_BUILTIN_OP_IMPORTER(ScaledTanh)
     float alpha = attrs.get<float>("alpha");
     float beta = attrs.get<float>("beta");
     return activationHelper(ctx, node, inputs, nvinfer1::ActivationType::kSCALED_TANH, &alpha, &beta);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(Loop)
-{
-    constexpr int NB_NON_STATE_INPUTS = 2; // First 2 inputs are trip count and condition respectively.
-    constexpr int NB_DISCARDED_OUTPUTS = 1; // First output is the updated value of the condition, and is ignored by the outer loop node.
-    constexpr int MAX_SCAN_OUTPUT_LENGTH = 1024; // Maximum length for scan outputs if trip count is not set.
-    ASSERT(inputs.size() >= 2, ErrorCode::kINVALID_NODE);
-    OnnxAttrs attrs(node, ctx);
-    const int nbInputs = node.input().size();
-    // The number of state variables on the input and output is the same.
-    const int nbStateVars = nbInputs - NB_NON_STATE_INPUTS;
-
-    const ::ONNX_NAMESPACE::GraphProto& body = attrs.get<::ONNX_NAMESPACE::GraphProto>("body");
-
-    auto loop = ctx->network()->addLoop();
-
-    // Trip count and condition are optional inputs.
-    nvinfer1::ITensor* tripLimit{nullptr};
-    if (inputs[0])
-    {
-        tripLimit = convertToScalar(ctx, &convertToTensor(inputs[0], ctx));
-        ASSERT(tripLimit, ErrorCode::kINVALID_NODE);
-        loop->addTripLimit(*tripLimit, nvinfer1::TripLimit::kCOUNT);
-    }
-    if (inputs[1])
-    {
-        nvinfer1::ITensor* cond = convertToScalar(ctx, &convertToTensor(inputs[1], ctx));
-        ASSERT(cond, ErrorCode::kINVALID_NODE);
-        loop->addTripLimit(*cond, nvinfer1::TripLimit::kWHILE);
-    }
-    // Add initial state inputs using recurrent layers.
-    std::vector<nvinfer1::IRecurrenceLayer*> stateVars{};
-    for (size_t i = 2; i < inputs.size(); ++i)
-    {
-        stateVars.emplace_back(loop->addRecurrence(convertToTensor(inputs[i], ctx)));
-        ctx->registerTensor(TensorOrWeights{stateVars.back()->getOutput(0)}, body.input(i).name());
-    }
-
-    // Loop body
-    TRT_CHECK(onnx2trt::parseGraph(ctx, body));
-
-    // Set final values of state variables.
-    std::vector<TensorOrWeights> nodeOutputs{};
-    for (int i = 0; i < nbStateVars; ++i)
-    {
-        // The first output of the body graph is the updated condition, which is ignored by the Loop node.
-        const int index = i + NB_DISCARDED_OUTPUTS;
-        const auto& bodyOutputName = body.output(index).name();
-        auto& stateOutput = convertToTensor(ctx->tensors().at(bodyOutputName), ctx);
-        LOG_VERBOSE("For state variable output: " << bodyOutputName << ", found matching tensor: " << stateOutput.getName() << ", with shape: " << stateOutput.getDimensions());
-        stateVars.at(i)->setInput(1, stateOutput);
-        // Each state variable is also a loop output
-        nodeOutputs.emplace_back(loop->addLoopOutput(*stateVars.at(i)->getOutput(0), nvinfer1::LoopOutput::kLAST_VALUE)->getOutput(0));
-    }
-    // Finally, set up scan outputs.
-    for (int i = nbStateVars + NB_DISCARDED_OUTPUTS; i < nbInputs; ++i)
-    {
-        const auto& bodyOutputName = body.output(i).name();
-        auto& scanOutput = convertToTensor(ctx->tensors().at(bodyOutputName), ctx);
-        LOG_VERBOSE("For scan output: " << bodyOutputName << ", found matching tensor: " << scanOutput.getName()
-            << ", with shape: " << scanOutput.getDimensions());
-        nvinfer1::ILoopOutputLayer* trtScanOut = loop->addLoopOutput(scanOutput, nvinfer1::LoopOutput::kCONCATENATE, 0);
-        // If trip limit is set, we can set the loop output to the tripLimit, otherwise, set to some dummy constant value.
-        // In the latter case, the scan outputs must not be used in the rest of the model.
-        if (tripLimit)
-        {
-            trtScanOut->setInput(1, *tripLimit);
-        }
-        else
-        {
-            trtScanOut->setInput(1, *addConstantScalar(ctx, MAX_SCAN_OUTPUT_LENGTH, ::ONNX_NAMESPACE::TensorProto_DataType_INT32)->getOutput(0));
-        }
-        nodeOutputs.emplace_back(trtScanOut->getOutput(0));
-    }
-
-    return {nodeOutputs};
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Scan)
@@ -2160,6 +2162,16 @@ DEFINE_BUILTIN_OP_IMPORTER(Sigmoid)
     return activationHelper(ctx, node, inputs, nvinfer1::ActivationType::kSIGMOID);
 }
 
+DEFINE_BUILTIN_OP_IMPORTER(Sin)
+{
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kSIN);
+}
+
+DEFINE_BUILTIN_OP_IMPORTER(Sinh)
+{
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kSINH);
+}
+
 DEFINE_BUILTIN_OP_IMPORTER(Size)
 {
     nvinfer1::ITensor* tensor_ptr = &convertToTensor(inputs.at(0), ctx);
@@ -2174,6 +2186,132 @@ DEFINE_BUILTIN_OP_IMPORTER(Size)
     int32_t size = get_shape_size(shape);
     *static_cast<int32_t*>(const_cast<void*>(weights.values)) = size;
     return {{weights}};
+}
+
+// TRT-7031: add tests
+DEFINE_BUILTIN_OP_IMPORTER(Slice)
+{
+    // If opset version >= 10 slice paramerters are weights instead of attributes
+    nvinfer1::ITensor& tensor = convertToTensor(inputs.at(0), ctx);
+    const int rank = tensor.getDimensions().nbDims;
+    std::vector<int64_t> starts;
+    std::vector<int64_t> ends;
+    std::vector<int64_t> axes;
+    std::vector<int64_t> steps;
+    if (ctx->getOpsetVersion() >= 10)
+    {
+        int nbInputs = node.input().size();
+        ASSERT(nbInputs >= 3 && nbInputs <= 5, ErrorCode::kUNSUPPORTED_NODE);
+
+        weightsToVector(inputs.at(1), &starts);
+        weightsToVector(inputs.at(2), &ends);
+
+        if (inputs.size() > 3 && inputs.at(3))
+        {
+            weightsToVector(inputs.at(3), &axes);
+        }
+        else
+        {
+            axes.resize(starts.size());
+            std::iota(axes.begin(), axes.end(), 0);
+        }
+
+        if (inputs.size() > 4 && inputs.at(4))
+        {
+            weightsToVector(inputs.at(4), &steps);
+        }
+        else
+        {
+            steps = std::vector<int64_t>(starts.size(), 1);
+        }
+    }
+    else
+    {
+        OnnxAttrs attrs(node, ctx);
+        starts = attrs.get<std::vector<int64_t>>("starts");
+        ends = attrs.get<std::vector<int64_t>>("ends");
+
+        std::vector<int64_t> defaultAxes(starts.size());
+        std::iota(defaultAxes.begin(), defaultAxes.end(), 0);
+        axes = attrs.get<std::vector<int64_t>>("axes", defaultAxes);
+
+        steps = std::vector<int64_t>(starts.size(), 1);
+    }
+
+    std::unordered_map<int64_t, std::tuple<int64_t, int64_t, int64_t>> sliceBounds{}; // Maps axis to [start, end, step]
+    for (size_t i = 0; i < axes.size(); ++i)
+    {
+        sliceBounds[axes[i]] = std::make_tuple(starts[i], ends[i], steps[i]);
+    }
+
+    std::vector<nvinfer1::ITensor*> startIndices{};
+    std::vector<nvinfer1::ITensor*> sizeIndices{};
+    std::vector<nvinfer1::ITensor*> strideIndices{};
+    nvinfer1::Dims indexShape{1, 1};
+
+    for (int i = 0; i < rank; ++i)
+    {
+        static const auto handleNegativeIndex = [&ctx, &indexShape, &tensor, &i](int64_t index) -> nvinfer1::ITensor*
+        {
+            if (index > static_cast<int64_t>(std::numeric_limits<int32_t>::max()))
+            {
+                std::cout << "WARNING: Slice index is out of bounds of INT32, clamping to INT32_MAX" << std::endl;
+                index = static_cast<int64_t>(std::numeric_limits<int32_t>::max());
+            }
+
+            nvinfer1::ITensor* indexTensor{addConstantScalar(ctx, index, ::ONNX_NAMESPACE::TensorProto::INT32, indexShape)->getOutput(0)};
+            nvinfer1::ITensor* dimLength{getAxisLength(ctx, &tensor, i, indexShape)};
+            if (index < 0)
+            {
+                indexTensor = ctx->network()->addElementWise(*dimLength, *indexTensor, nvinfer1::ElementWiseOperation::kSUM)->getOutput(0);
+            }
+            return indexTensor;
+        };
+
+        nvinfer1::ITensor* endIndex;
+        if (sliceBounds.count(i))
+        {
+            int64_t start, end, stride;
+            std::tie(start, end, stride) = sliceBounds.at(i);
+
+            startIndices.emplace_back(handleNegativeIndex(start));
+            endIndex = handleNegativeIndex(end);
+            strideIndices.emplace_back(handleNegativeIndex(stride)); // This should never be negative anyway.
+        }
+        else
+        {
+            // Default values take the entire length of the axis.
+            startIndices.emplace_back(handleNegativeIndex(0));
+            endIndex = getAxisLength(ctx, &tensor, i, indexShape);
+            strideIndices.emplace_back(handleNegativeIndex(1));
+        }
+        // size[i] = min(end[i], getAxisLength(ctx, &tensor, i, indexShape)) - start[i]) / stride[i]
+        sizeIndices.emplace_back(
+            ctx->network()->addElementWise(
+                *ctx->network()->addElementWise(
+                    *ctx->network()->addElementWise(
+                        *endIndex,
+                        *getAxisLength(ctx, &tensor, i, indexShape),
+                        nvinfer1::ElementWiseOperation::kMIN
+                    )->getOutput(0),
+                    *startIndices.back(),
+                    nvinfer1::ElementWiseOperation::kSUB
+                )->getOutput(0),
+                *strideIndices.back(),
+                nvinfer1::ElementWiseOperation::kDIV
+            )->getOutput(0)
+        );
+    }
+
+    nvinfer1::ITensor* startsTensor = ctx->network()->addConcatenation(startIndices.data(), startIndices.size())->getOutput(0);
+    nvinfer1::ITensor* sizeTensor = ctx->network()->addConcatenation(sizeIndices.data(), sizeIndices.size())->getOutput(0);
+    nvinfer1::ITensor* stridesTensor = ctx->network()->addConcatenation(strideIndices.data(), strideIndices.size())->getOutput(0);
+
+    nvinfer1::ISliceLayer* slice = ctx->network()->addSlice(tensor, nvinfer1::Dims{rank}, nvinfer1::Dims{rank}, nvinfer1::Dims{rank});
+    slice->setInput(1, *startsTensor);
+    slice->setInput(2, *sizeTensor);
+    slice->setInput(3, *stridesTensor);
+    RETURN_FIRST_OUTPUT(slice);
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Softmax)
@@ -2248,14 +2386,6 @@ DEFINE_BUILTIN_OP_IMPORTER(Softsign)
 DEFINE_BUILTIN_OP_IMPORTER(Softplus)
 {
     return activationHelper(ctx, node, inputs, nvinfer1::ActivationType::kSOFTPLUS);
-}
-
-DEFINE_BUILTIN_OP_IMPORTER(ParametricSoftplus)
-{
-    OnnxAttrs attrs(node, ctx);
-    float alpha = attrs.get<float>("alpha");
-    float beta = attrs.get<float>("beta");
-    return activationHelper(ctx, node, inputs, nvinfer1::ActivationType::kSOFTPLUS, &alpha, &beta);
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(SpaceToDepth)
@@ -2384,7 +2514,6 @@ DEFINE_BUILTIN_OP_IMPORTER(Squeeze)
     RETURN_FIRST_OUTPUT(layer);
 }
 
-DECLARE_BUILTIN_OP_IMPORTER(Add);
 DEFINE_BUILTIN_OP_IMPORTER(Sub)
 {
     return elementwiseHelper(ctx, node, inputs, nvinfer1::ElementWiseOperation::kSUB);
@@ -2393,6 +2522,11 @@ DEFINE_BUILTIN_OP_IMPORTER(Sub)
 DEFINE_BUILTIN_OP_IMPORTER(Sum)
 {
     return elementwiseHelper(ctx, node, inputs, nvinfer1::ElementWiseOperation::kSUM);
+}
+
+DEFINE_BUILTIN_OP_IMPORTER(Tan)
+{
+    return unaryHelper(ctx, node, inputs, nvinfer1::UnaryOperation::kTAN);
 }
 
 DEFINE_BUILTIN_OP_IMPORTER(Tanh)
@@ -2532,51 +2666,6 @@ DEFINE_BUILTIN_OP_IMPORTER(Unsqueeze)
     RETURN_FIRST_OUTPUT(layer);
 }
 
-DEFINE_BUILTIN_OP_IMPORTER(Resize)
-{
-    nvinfer1::ITensor& input = convertToTensor(inputs.at(0), ctx);
-    int input_dims = input.getDimensions().nbDims;
-    ASSERT(input_dims > 0, ErrorCode::kUNSUPPORTED_NODE);
-
-    // Add resize layer
-    nvinfer1::IResizeLayer* layer = ctx->network()->addResize(input);
-
-    // Retrive and validate scale factors.
-    // Scale factors include batch dimensions as well.
-    ASSERT(inputs.size() == 2, ErrorCode::kINVALID_NODE);
-    auto scales = inputs.at(1);
-    // Support for scales as weights
-    ASSERT(scales.is_weights(), ErrorCode::kUNSUPPORTED_NODE);
-    ShapedWeights scales_weights = scales.weights();
-    ASSERT(scales_weights.shape.nbDims == 1, ErrorCode::kUNSUPPORTED_NODE);
-    ASSERT(scales_weights.count() == static_cast<size_t>(input_dims), ErrorCode::kUNSUPPORTED_NODE);
-    ASSERT(scales_weights.type == ::ONNX_NAMESPACE::TensorProto::FLOAT, ErrorCode::kINVALID_NODE);
-    // Get floating point scale factors.
-    float const* scales_ptr = static_cast<float const*>(scales_weights.values);
-    layer->setScales(scales_ptr, input_dims);
-
-    // Set resize mode
-    OnnxAttrs attrs(node, ctx);
-    auto mode = attrs.get<std::string>("mode", "nearest");
-    ASSERT(mode == "nearest" || mode == "linear", ErrorCode::kUNSUPPORTED_NODE);
-    // Set default resize mode. Nearest resize support N-D (where 0 < N <= 8) resize.
-    nvinfer1::ResizeMode resizeMode = nvinfer1::ResizeMode::kNEAREST;
-    if (mode == "linear")
-    {
-        // Linear resize support 1-D, 2-D and 3D resize.
-        ASSERT((input_dims >= 1) && (input_dims <= 3), ErrorCode::kUNSUPPORTED_NODE);
-        resizeMode = nvinfer1::ResizeMode::kLINEAR;
-    }
-    layer->setResizeMode(resizeMode);
-
-    // Set other attributes. ONNX spec does not have this attribute yet.
-    // Default: False. Set it any way.
-    layer->setAlignCorners(false);
-
-    // Return layer output
-    RETURN_FIRST_OUTPUT(layer);
-}
-
 DEFINE_BUILTIN_OP_IMPORTER(Upsample)
 {
     nvinfer1::ITensor& tensor = convertToTensor(inputs.at(0), ctx);
@@ -2631,131 +2720,7 @@ DEFINE_BUILTIN_OP_IMPORTER(Upsample)
     RETURN_FIRST_OUTPUT(layer);
 }
 
-// TRT-7031: add tests
-DEFINE_BUILTIN_OP_IMPORTER(Slice)
-{
-    // If opset version >= 10 slice paramerters are weights instead of attributes
-    nvinfer1::ITensor& tensor = convertToTensor(inputs.at(0), ctx);
-    const int rank = tensor.getDimensions().nbDims;
-    std::vector<int64_t> starts;
-    std::vector<int64_t> ends;
-    std::vector<int64_t> axes;
-    std::vector<int64_t> steps;
-    if (ctx->getOpsetVersion() >= 10)
-    {
-        int nbInputs = node.input().size();
-        ASSERT(nbInputs >= 3 && nbInputs <= 5, ErrorCode::kUNSUPPORTED_NODE);
-
-        weightsToVector(inputs.at(1), &starts);
-        weightsToVector(inputs.at(2), &ends);
-
-        if (inputs.size() > 3 && inputs.at(3))
-        {
-            weightsToVector(inputs.at(3), &axes);
-        }
-        else
-        {
-            axes.resize(starts.size());
-            std::iota(axes.begin(), axes.end(), 0);
-        }
-
-        if (inputs.size() > 4 && inputs.at(4))
-        {
-            weightsToVector(inputs.at(4), &steps);
-        }
-        else
-        {
-            steps = std::vector<int64_t>(starts.size(), 1);
-        }
-    }
-    else
-    {
-        OnnxAttrs attrs(node, ctx);
-        starts = attrs.get<std::vector<int64_t>>("starts");
-        ends = attrs.get<std::vector<int64_t>>("ends");
-
-        std::vector<int64_t> defaultAxes(starts.size());
-        std::iota(defaultAxes.begin(), defaultAxes.end(), 0);
-        axes = attrs.get<std::vector<int64_t>>("axes", defaultAxes);
-
-        steps = std::vector<int64_t>(starts.size(), 1);
-    }
-
-    std::unordered_map<int64_t, std::tuple<int64_t, int64_t, int64_t>> sliceBounds{}; // Maps axis to [start, end, step]
-    for (size_t i = 0; i < axes.size(); ++i)
-    {
-        sliceBounds[axes[i]] = std::make_tuple(starts[i], ends[i], steps[i]);
-    }
-
-    std::vector<nvinfer1::ITensor*> startIndices{};
-    std::vector<nvinfer1::ITensor*> sizeIndices{};
-    std::vector<nvinfer1::ITensor*> strideIndices{};
-    nvinfer1::Dims indexShape{1, 1};
-
-    for (int i = 0; i < rank; ++i)
-    {
-        static const auto handleNegativeIndex = [&ctx, &indexShape, &tensor, &i](int64_t index) -> nvinfer1::ITensor*
-        {
-            if (index > static_cast<int64_t>(std::numeric_limits<int32_t>::max()))
-            {
-                std::cout << "WARNING: Slice index is out of bounds of INT32, clamping to INT32_MAX" << std::endl;
-                index = static_cast<int64_t>(std::numeric_limits<int32_t>::max());
-            }
-
-            nvinfer1::ITensor* indexTensor{addConstantScalar(ctx, index, ::ONNX_NAMESPACE::TensorProto::INT32, indexShape)->getOutput(0)};
-            nvinfer1::ITensor* dimLength{getAxisLength(ctx, &tensor, i, indexShape)};
-            if (index < 0)
-            {
-                indexTensor = ctx->network()->addElementWise(*dimLength, *indexTensor, nvinfer1::ElementWiseOperation::kSUM)->getOutput(0);
-            }
-            return indexTensor;
-        };
-
-        nvinfer1::ITensor* endIndex;
-        if (sliceBounds.count(i))
-        {
-            int64_t start, end, stride;
-            std::tie(start, end, stride) = sliceBounds.at(i);
-
-            startIndices.emplace_back(handleNegativeIndex(start));
-            endIndex = handleNegativeIndex(end);
-            strideIndices.emplace_back(handleNegativeIndex(stride)); // This should never be negative anyway.
-        }
-        else
-        {
-            // Default values take the entire length of the axis.
-            startIndices.emplace_back(handleNegativeIndex(0));
-            endIndex = getAxisLength(ctx, &tensor, i, indexShape);
-            strideIndices.emplace_back(handleNegativeIndex(1));
-        }
-        // size[i] = min(end[i], getAxisLength(ctx, &tensor, i, indexShape)) - start[i]) / stride[i]
-        sizeIndices.emplace_back(
-            ctx->network()->addElementWise(
-                *ctx->network()->addElementWise(
-                    *ctx->network()->addElementWise(
-                        *endIndex,
-                        *getAxisLength(ctx, &tensor, i, indexShape),
-                        nvinfer1::ElementWiseOperation::kMIN
-                    )->getOutput(0),
-                    *startIndices.back(),
-                    nvinfer1::ElementWiseOperation::kSUB
-                )->getOutput(0),
-                *strideIndices.back(),
-                nvinfer1::ElementWiseOperation::kDIV
-            )->getOutput(0)
-        );
-    }
-
-    nvinfer1::ITensor* startsTensor = ctx->network()->addConcatenation(startIndices.data(), startIndices.size())->getOutput(0);
-    nvinfer1::ITensor* sizeTensor = ctx->network()->addConcatenation(sizeIndices.data(), sizeIndices.size())->getOutput(0);
-    nvinfer1::ITensor* stridesTensor = ctx->network()->addConcatenation(strideIndices.data(), strideIndices.size())->getOutput(0);
-
-    nvinfer1::ISliceLayer* slice = ctx->network()->addSlice(tensor, nvinfer1::Dims{rank}, nvinfer1::Dims{rank}, nvinfer1::Dims{rank});
-    slice->setInput(1, *startsTensor);
-    slice->setInput(2, *sizeTensor);
-    slice->setInput(3, *stridesTensor);
-    RETURN_FIRST_OUTPUT(slice);
-}
+// INetwork Serialization importer functions - TODO: Move to it's own file?
 
 DEFINE_BUILTIN_OP_IMPORTER(TRT_Scale)
 {

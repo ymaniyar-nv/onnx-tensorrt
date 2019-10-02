@@ -136,6 +136,9 @@ NodeImportResult argMinMaxHelper(IImporterContext* ctx, const ::ONNX_NAMESPACE::
 // Helper function to broadcast two tensors to the larger one's shape
 void broadcastTensors(IImporterContext* ctx, nvinfer1::ITensor*& t1, nvinfer1::ITensor*& t2);
 
+// Helper function to broadcast one tensor to a given shape.
+void broadcastTensors(IImporterContext* ctx, nvinfer1::ITensor*& t1, const int nbDims);
+
 // Helper function for constantOfShape operator. Input shape must be a shape tensor
 nvinfer1::ITensor* constantOfShape(IImporterContext* ctx, nvinfer1::ITensor* constant, nvinfer1::ITensor* shape);
 
