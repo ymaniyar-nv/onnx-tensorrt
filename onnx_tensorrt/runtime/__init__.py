@@ -20,3 +20,4 @@
 
 from __future__ import absolute_import
 
+from ._nv_onnx_runtime_bindings import *

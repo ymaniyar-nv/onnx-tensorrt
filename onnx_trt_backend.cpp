@@ -1,4 +1,5 @@
 #include "NvOnnxParser.h"
+#include "common.hpp"
 #include "onnx/onnxifi.h"
 #include <cuda_runtime.h>
 #include <NvInfer.h>
@@ -837,7 +838,8 @@ onnxGetBackendCompatibility(onnxBackendID backendID, size_t onnxModelSize,
     std::shared_ptr<nvinfer1::IBuilder> trt_builder = infer_object(nvinfer1::createInferBuilder(trt_logger));
     std::shared_ptr<nvinfer1::INetworkDefinition> trt_network = infer_object(trt_builder->createNetwork());
     auto parser = infer_object(nvonnxparser::createParser(*trt_network, trt_logger));
-    if (parser->supportsModel(onnxModel, onnxModelSize)) {
+    SubGraphCollection_t subgraphcollection;
+    if (parser->supportsModel(onnxModel, onnxModelSize, subgraphcollection)) {
       return ONNXIFI_STATUS_SUCCESS;
     } else {
       return ONNXIFI_STATUS_UNSUPPORTED_OPERATOR;
