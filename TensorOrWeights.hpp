@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -67,14 +67,18 @@ public:
     {
         return _variant == NODE_WEIGHTS;
     }
+    bool isNullTensor() const
+    {
+        return is_tensor() && _tensor == nullptr;
+    }
     nvinfer1::ITensor& tensor()
     {
-        assert(is_tensor());
+        assert(!isNullTensor());
         return *_tensor;
     }
     nvinfer1::ITensor const& tensor() const
     {
-        assert(is_tensor());
+        assert(!isNullTensor());
         return *_tensor;
     }
     ShapedWeights& weights()
