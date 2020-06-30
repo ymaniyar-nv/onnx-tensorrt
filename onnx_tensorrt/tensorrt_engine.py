@@ -47,7 +47,8 @@ class Binding(object):
         dtype = engine.get_binding_dtype(self.index)
         dtype_map = {trt.DataType.FLOAT: np.float32,
                         trt.DataType.HALF:  np.float16,
-                        trt.DataType.INT8:  np.int8}
+                        trt.DataType.INT8:  np.int8,
+                        trt.DataType.BOOL: np.bool}
         if hasattr(trt.DataType, 'INT32'):
             dtype_map[trt.DataType.INT32] = np.int32
 
