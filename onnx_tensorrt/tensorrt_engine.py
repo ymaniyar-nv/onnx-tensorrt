@@ -137,11 +137,6 @@ class Engine(object):
         if isinstance(inputs, dict):
             inputs = [inputs[b.name] for b in self.inputs]
         
-        batch_size = 0
-        if inputs:
-            batch_size = inputs[0].shape[0]
-        else:
-            batch_size = self.outputs[0].shape[0]
 
         for i, (input_array, input_binding) in enumerate(zip(inputs, self.inputs)):
             input_array = check_input_validity(i, input_array, input_binding)
