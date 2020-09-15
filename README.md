@@ -6,7 +6,7 @@ See also the [TensorRT documentation](https://docs.nvidia.com/deeplearning/sdk/#
 
 ## Supported TensorRT Versions
 
-Development on the Master branch is for the latest version of [TensorRT 7.2](https://developer.nvidia.com/nvidia-tensorrt-download) with full-dimensions and dynamic shape support.
+Development on the Master branch is for the latest version of [TensorRT 7.2.1](https://developer.nvidia.com/nvidia-tensorrt-download) with full-dimensions and dynamic shape support.
 
 For previous versions of TensorRT, refer to their respective branches.
 
@@ -38,15 +38,20 @@ Current supported ONNX operators are found in the [operator support matrix](oper
 ### Dependencies
 
  - [Protobuf >= 3.8.x](https://github.com/google/protobuf/releases)
- - [TensorRT 7.2](https://developer.nvidia.com/tensorrt)
- - [TensorRT 7.2 open source libaries (master branch)](https://github.com/NVIDIA/TensorRT/)
+ - [TensorRT 7.2.1](https://developer.nvidia.com/tensorrt)
+ - [TensorRT 7.2.1 open source libaries (master branch)](https://github.com/NVIDIA/TensorRT/)
 
 ### Building
 
-For building on master, we recommend following the instructions on the [master branch of TensorRT](https://github.com/NVIDIA/TensorRT/) as there are new dependencies that were introduced to support these new features.
+For building on master, we recommend following the instructions on the [master branch of TensorRT](https://github.com/NVIDIA/TensorRT/) to take advatange of the latest plugin code required for importing certain operators.
 
-To build on older branches refer to their respective READMEs.
+To build only the ONNX-TensorRT parser, follow the following steps:
 
+    cd onnx-tensorrt
+    mkdir build && cd build
+    cmake .. -DTENSORRT_ROOT=<path_to_trt> && make -j
+    // Ensure that you update your LD_LIBRARY_PATH to pick up the location of the newly built library:
+    export LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH
 
 ## Executable usage
 
@@ -74,9 +79,9 @@ See more usage information by running:
 ### Python modules
 Python bindings for the ONNX-TensorRT parser are packaged in the shipped `.whl` files. Install them with
 
-    pip install <tensorrt_install_dir>/python/tensorrt-7.x.x.x-cp27-none-linux_x86_64.whl
+    pip install <tensorrt_install_dir>/python/tensorrt-7.x.x.x-cp<python_ver>-none-linux_x86_64.whl
 
-TensorRT 7.2 supports ONNX release 1.6.0. Install it with:
+TensorRT 7.2.1 supports ONNX release 1.6.0. Install it with:
 
     pip install onnx==1.6.0
 
