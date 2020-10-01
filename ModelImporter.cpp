@@ -504,10 +504,12 @@ Status ModelImporter::importModel(
     for (::ONNX_NAMESPACE::ValueInfoProto const& output : graph.output())
     {
         ASSERT(_importer_ctx.tensors().count(output.name()), ErrorCode::kINVALID_GRAPH);
-        ASSERT(_importer_ctx.tensors().at(output.name()).is_tensor(), ErrorCode::kUNSUPPORTED_GRAPH);
-        nvinfer1::ITensor* output_tensor_ptr = &_importer_ctx.tensors().at(output.name()).tensor();
+
+        nvinfer1::ITensor* output_tensor_ptr
+            = &convertToTensor(_importer_ctx.tensors().at(output.name()), &_importer_ctx);
         LOG_VERBOSE("Marking " << output_tensor_ptr->getName() << " as output: " << output.name());
         output_tensor_ptr->setName(output.name().c_str());
+
         if (output_tensor_ptr->isNetworkInput())
         {
             // HACK WAR for TRT not allowing input == output
@@ -517,6 +519,7 @@ Status ModelImporter::importModel(
             ASSERT(output_tensor_ptr, ErrorCode::kUNSUPPORTED_NODE);
             output_tensor_ptr->setName(output.name().c_str());
         }
+
         nvinfer1::ITensor** user_output = _importer_ctx.getUserOutput(output.name().c_str());
         if (!user_output)
         {
