@@ -2564,12 +2564,14 @@ DEFINE_BUILTIN_OP_IMPORTER(Resize)
 {
     nvinfer1::ITensor& input = convertToTensor(inputs.at(0), ctx);
     // TRT does not support INT32 nor BOOL input types for this node
-    ASSERT(input.getType() != nvinfer1::DataType::kINT32 && input.getType() != nvinfer1::DataType::kBOOL, ErrorCode::kUNSUPPORTED_NODE);
+    ASSERT( (input.getType() != nvinfer1::DataType::kINT32
+                && input.getType() != nvinfer1::DataType::kBOOL)
+                && "This version of TensorRT does not support INT32 or BOOL input for the Resize operator.", ErrorCode::kUNSUPPORTED_NODE);
     int inputRank = input.getDimensions().nbDims;
-    ASSERT(inputRank > 0, ErrorCode::kUNSUPPORTED_NODE);
+    ASSERT( (inputRank > 0) && "The input tensor cannot be a scalar.", ErrorCode::kUNSUPPORTED_NODE);
     // Add resize layer
     nvinfer1::IResizeLayer* layer = ctx->network()->addResize(input);
-    ctx->registerLayer(layer, node.name());
+    ctx->registerLayer(layer, getNodeName(node));
     OnnxAttrs attrs(node, ctx);
 
     auto mode = attrs.get<std::string>("mode", "nearest");
@@ -2591,54 +2593,57 @@ DEFINE_BUILTIN_OP_IMPORTER(Resize)
                 && "This version of TensorRT only supports floor nearest_mode!",
             ErrorCode::kUNSUPPORTED_NODE);
 
-        // For TRT nn:
-        //     alignCorners = 0: input/output * index
-        //     alignCorners = 1: (input-1)/(output-1) * index
-        //
-        // For TRT linear:
-        //     alignCorners = 0: input/output * (index + 0.5) - 0.5
-        //     alignCorners = 1: (input-1)/(output-1) * index
-        switch (resizeMode)
+        // The existence of a fourth input means a shape was passed as the resize parameter
+        // For ONNX resize with the "sizes", TensorRT's resize maps to ONNX's in the following ways:
+        // Nearest:
+        //     alignCorners = 0: ASYMMETRIC
+        //     alignCorners = 1: ALIGN_CORNERS
+        // Linear:
+        //     alignCorners = 0: HALF_PIXEL
+        //     alignCorners = 1: ALIGN_CORNERS
+        if (inputs.size() == 4)
         {
-        case nvinfer1::ResizeMode::kNEAREST:
-            // For Pytorch nearest, there is no alignCorners support, and we use the same algo as AlignCorners=False algo in TRT
-            //
-            // For TF nn:
-            //    alignCorners = 0, halfPixel = 0: onnx.resize.transformationMode = asymmetric, input/output * index
-            //    alignCorners = 1, halfPixel = 0: onnx.resize.transformationMode = asymmetric, (input-1)/(output-1) * index
-            //    alignCorners = 0, halfPixel = 1: onnx.resize.transformationMode = half_pixel, input/output * (index+0.5)
-            //
-            // For PyT nn:
-            //    alignCorners = 0: onnx.resize.transformationMode = asymmetric, input/output * index
-            break;
-        case nvinfer1::ResizeMode::kLINEAR:
-            // Note both asymmetric and align_corners resize modes go through the same import path in TRT:
-            //
-            // For TF linear:
-            //    alignCorners = 0, halfPixel = 0: onnx.resize.transformationMode = asymmetric, input/output * index
-            //    alignCorners = 1, halfPixel = 0: onnx.resize.transformationMode = asymmetric, (input-1)/(output-1) * index
-            //    alignCorners = 0, halfPixel = 1: onnx.resize.transformationMode = half_pixel, input/output * (index + 0.5) - 0.5
-            //
-            // For PyT linear:
-            //    alignCorners = 0: onnx.resize.transformationMode = pytorch_half_pixel, input/output * (index + 0.5) - 0.5
-            //    alignCorners = 1: onnx.resize.transformationMode = align_corners, (input-1)/(output-1) * index
-            if (transformationMode == "asymmetric" || transformationMode == "align_corners")
+            if (transformationMode == "align_corners")
             {
                 layer->setAlignCorners(true);
             }
-            break;
-        }
-
-        // The existence of a fourth input means a shape was passed as the resize parameter
-        if (inputs.size() == 4)
-        {
+            if (mode == "nearest")
+            {
+                ASSERT((transformationMode == "asymmetric" || transformationMode == "align_corners") && "TensorRT only supports asymmetric and align_corners transformation modes for nearest neighbor resizes when sizes are provided!", ErrorCode::kUNSUPPORTED_NODE);
+            }
+            else if (mode == "linear")
+            {
+                ASSERT((transformationMode == "half_pixel" || transformationMode == "pytorch_half_pixel" || transformationMode == "align_corners") && "TensorRT only supports half_pixel, pytorch_half_pixel, and align_corners transofmration modes for linear resizes when sizes are provided!", ErrorCode::kUNSUPPORTED_NODE);
+            }
             auto* resizeShape = &convertToTensor(inputs.at(3), ctx);
             layer->setInput(1, *resizeShape);
             layer->setResizeMode(resizeMode);
             RETURN_FIRST_OUTPUT(layer);
         }
+        // For ONNX resize with "scales", TensorRT's resize maps to ONNX's in the following ways:
+        // Nearest:
+        //    alignCorners = 0: ASYMMETRIC
+        //    alignCorners = 1: ASYMMETRIC
+        // Linear:
+        //    alignCorners = 0: HALF_PIXEL
+        //    alignCorners = 1: ASYMMETRIC
+        else
+        {
+            if (mode == "nearest")
+            {
+                ASSERT(transformationMode == "asymmetric" && "TensorRT only supports asymmetric tranformation mode for nearest neighbor resizes when scales are provided!",ErrorCode::kUNSUPPORTED_NODE);
+            }
+            else if (mode == "linear")
+            {
+                ASSERT((transformationMode == "asymmetric" || transformationMode == "pytorch_half_pixel" || transformationMode == "half_pixel") && "TensorRT only supports half pixel, pytorch half_pixel, and asymmetric tranformation mode for linear resizes when scales are provided!", ErrorCode::kUNSUPPORTED_NODE);
+                if (transformationMode == "asymmetric")
+                {
+                    layer->setAlignCorners(true);
+                }
+            }
+        }
     }
-    // For opset 10 resize, the only supported mode is asymmetric resize, which is mapped to TRT's alignCorners.
+    // For opset 10 resize, the only supported mode is asymmetric resize with scales.
     else
     {
         transformationMode = "asymmetric";
