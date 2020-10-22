@@ -102,7 +102,7 @@ public:
     }
     virtual void insertRefitMap(std::string weightsName, std::string layerName, nvinfer1::WeightsRole role) override
     {
-        (*mRefitMap)[weightsName] = WeightsPair_t{layerName, role};
+        mRefitMap->insert({weightsName, WeightsPair_t{layerName, role}});
     }
     // This actually handles weights as well, but is named this way to be consistent with the tensors()
     virtual void registerTensor(TensorOrWeights tensor, const std::string& basename) override
