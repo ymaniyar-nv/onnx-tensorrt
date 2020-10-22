@@ -142,16 +142,16 @@ public:
         if (layer)
         {
             const std::string name = basename.empty() ? layer->getName() : basename;
-            const std::string uniqueName = generateUniqueName(mLayerNames, basename);
+            const std::string uniqueName = generateUniqueName(mLayerNames, name);
 
             auto* ctx = this; // To enable logging.
             if (layer->getType() == nvinfer1::LayerType::kCONSTANT)
             {
-                LOG_VERBOSE("Registering constant layer: " << name << " for ONNX initializer: " << basename);
+                LOG_VERBOSE("Registering constant layer: " << uniqueName << " for ONNX initializer: " << basename);
             }
             else
             {
-                LOG_VERBOSE("Registering layer: " << name << " for ONNX node: " << basename);
+                LOG_VERBOSE("Registering layer: " << uniqueName << " for ONNX node: " << basename);
             }
             layer->setName(uniqueName.c_str());
         }

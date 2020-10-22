@@ -82,7 +82,7 @@ Status setStringMap(
     return Status::success();
 }
 
-Status parseGraph(IImporterContext* ctx, const ::ONNX_NAMESPACE::GraphProto& graph, bool deserializingINetwork)
+Status parseGraph(IImporterContext* ctx, const ::ONNX_NAMESPACE::GraphProto& graph, bool deserializingINetwork, int* currentNode)
 {
     // Import initializers.
     for (const ::ONNX_NAMESPACE::TensorProto& initializer : graph.initializer())
@@ -99,6 +99,10 @@ Status parseGraph(IImporterContext* ctx, const ::ONNX_NAMESPACE::GraphProto& gra
     const string_map<NodeImporter>& opImporters = getBuiltinOpImporterMap();
     for (const auto& nodeIndex : topoOrder)
     {
+        if (currentNode)
+        {
+            *currentNode = nodeIndex;
+        }
         const auto& node = graph.node(nodeIndex);
         LOG_VERBOSE("Parsing node: " << node.name() << " [" << node.op_type() << "]");
 
@@ -344,6 +348,28 @@ bool ModelImporter::supportsModel(
         return false;
     };
 
+    auto checkShapeTensorType = [&ctx](::ONNX_NAMESPACE::NodeProto const& node){
+        for (int i = 0; i < ctx->network()->getNbInputs(); i++)
+        {
+            auto input = ctx->network()->getInput(i);
+            if (input->isShapeTensor())
+            {
+                if (input->getType() == nvinfer1::DataType::kFLOAT || node.op_type() == "Loop" || node.op_type() == "Scan")
+                {
+                    auto name = input->getName();
+                    for (auto input : node.input())
+                    {
+                        if (input == name)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    };
+
     bool newSubGraph(true);
     // Sort and partition supported subgraphs
     std::vector<size_t> topological_order;
@@ -357,16 +383,17 @@ bool ModelImporter::supportsModel(
     {
         ::ONNX_NAMESPACE::NodeProto const& node = model.graph().node(node_idx);
         // Add the node to the subgraph if:
-        //     1. Importer function is regestiered for the operator type
+        //     1. There is an importer function registered for the operator type
         //     2. It is not directly connected to an unsupported input
-        //     3. Parsing did not hit an error on the node
-        //     4. Any shape tensor output is from a supported layer.
+        //     3. It is not directly connected to an unsupported shape tensor input
+        //     4. It did not illegally produce a shape tensor output
+        //     5. The importer function did not throw an assertion
         bool registered = supportsOperator(node.op_type().c_str());
-        bool containsInput = (input_node.empty()) ? false : checkForInput(node);
-        bool containsIndex = node_idx == error_node;
-        auto tensorName = node.output(0);
-        bool supportedShapeTensor = ctx->unsupportedShapeTensors().count(tensorName) == 0 ? true : false;
-        if (registered && !containsInput && !containsIndex && supportedShapeTensor)
+        bool unsupportedInput = (input_node.empty()) ? false : checkForInput(node);
+        bool unsupportedShapeType = checkShapeTensorType(node);
+        bool unsupportedShapeTensor = ctx->unsupportedShapeTensors().count(node.name()) > 0 ? true : false;
+        bool unsuccessfulParse = node_idx == error_node;
+        if (registered && !unsupportedInput && !unsupportedShapeType && !unsupportedShapeTensor && !unsuccessfulParse)
         {
             if (newSubGraph)
             {
@@ -496,18 +523,21 @@ Status ModelImporter::importModel(
         _importer_ctx.registerTensor(TensorOrWeights{}, output.name());
     }
 
+    _current_node = -1;
     TRT_CHECK(importInputs(&_importer_ctx, graph, &_importer_ctx.tensors(), weight_count, weight_descriptors));
-    TRT_CHECK(parseGraph(&_importer_ctx, graph, model.producer_name() == "TensorRT"));
+    TRT_CHECK(parseGraph(&_importer_ctx, graph, model.producer_name() == "TensorRT", &_current_node));
 
     _current_node = -1;
     // Mark outputs defined in the ONNX model (unless tensors are user-requested)
     for (::ONNX_NAMESPACE::ValueInfoProto const& output : graph.output())
     {
         ASSERT(_importer_ctx.tensors().count(output.name()), ErrorCode::kINVALID_GRAPH);
-        ASSERT(_importer_ctx.tensors().at(output.name()).is_tensor(), ErrorCode::kUNSUPPORTED_GRAPH);
-        nvinfer1::ITensor* output_tensor_ptr = &_importer_ctx.tensors().at(output.name()).tensor();
+
+        nvinfer1::ITensor* output_tensor_ptr
+            = &convertToTensor(_importer_ctx.tensors().at(output.name()), &_importer_ctx);
         LOG_VERBOSE("Marking " << output_tensor_ptr->getName() << " as output: " << output.name());
         output_tensor_ptr->setName(output.name().c_str());
+
         if (output_tensor_ptr->isNetworkInput())
         {
             // HACK WAR for TRT not allowing input == output
@@ -517,6 +547,7 @@ Status ModelImporter::importModel(
             ASSERT(output_tensor_ptr, ErrorCode::kUNSUPPORTED_NODE);
             output_tensor_ptr->setName(output.name().c_str());
         }
+
         nvinfer1::ITensor** user_output = _importer_ctx.getUserOutput(output.name().c_str());
         if (!user_output)
         {
